@@ -1,0 +1,9 @@
+{
+    entry = {
+        bundle = "JimWasRecorderPrefs";
+        cell = "PSLinkCell";
+        detail = "JWRRootListController";
+        icon = "icon.png";
+        label = "JimWas Recorder";
+    };
+}

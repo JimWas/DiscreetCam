@@ -1,0 +1,10 @@
+{
+    CFBundleDisplayName = "JimWas Recorder";
+    CFBundleIdentifier = "com.jimwas.recorder.preferences";
+    CFBundleInfoDictionaryVersion = "6.0";
+    CFBundleName = "JimWasRecorderPrefs";
+    CFBundlePackageType = "BNDL";
+    CFBundlePrincipalClass = "JWRRootListController";
+    CFBundleShortVersionString = "1.0";
+    CFBundleVersion = "1";
+}

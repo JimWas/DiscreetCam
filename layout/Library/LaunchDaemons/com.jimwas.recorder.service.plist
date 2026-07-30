@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.jimwas.recorder.service</string>
+<key>ProgramArguments</key><array><string>/var/jb/Applications/JWRRecorderApp.app/JWRRecorderApp</string><string>--service</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>UserName</key><string>mobile</string>
+<key>ProcessType</key><string>Interactive</string>
+<key>StandardOutPath</key><string>/tmp/jwr-service.log</string>
+<key>StandardErrorPath</key><string>/tmp/jwr-service-error.log</string>
+</dict></plist>

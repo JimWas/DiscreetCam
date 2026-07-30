@@ -1,0 +1,22 @@
+#import <Foundation/Foundation.h>
+
+static NSString * const JWRPrefsID = @"com.jimwas.recorder";
+static NSString * const JWRNotifyVideo = @"com.jimwas.recorder/toggleVideo";
+static NSString * const JWRNotifyAudio = @"com.jimwas.recorder/toggleAudio";
+static NSString * const JWRNotifyPhoto = @"com.jimwas.recorder/takePhoto";
+static NSString * const JWRNotifyReload = @"com.jimwas.recorder/reload";
+static NSString * const JWRNotifyState = @"com.jimwas.recorder/stateChanged";
+static NSString * const JWRNotifyHapticStarted = @"com.jimwas.recorder/hapticStarted";
+static NSString * const JWRNotifyHapticStopped = @"com.jimwas.recorder/hapticStopped";
+static NSString * const JWRNotifyHapticPhoto = @"com.jimwas.recorder/hapticPhoto";
+static NSString * const JWRNotifyHapticHeartbeat = @"com.jimwas.recorder/hapticHeartbeat";
+static NSString * const JWRNotifyHapticFailure = @"com.jimwas.recorder/hapticFailure";
+static NSString * const JWRNotifyHapticVideoStarted = @"com.jimwas.recorder/hapticVideoStarted";
+static NSString * const JWRNotifyHapticVideoStopped = @"com.jimwas.recorder/hapticVideoStopped";
+
+typedef NS_ENUM(NSInteger, JWRAction) {
+    JWRActionNone = 0,
+    JWRActionVideo = 1,
+    JWRActionAudio = 2,
+    JWRActionPhoto = 3
+};

@@ -1,0 +1,10 @@
+{
+    CFBundleDisplayName = "Recorder Video";
+    CFBundleIdentifier = "com.jimwas.recorder.video-module";
+    CFBundleInfoDictionaryVersion = "6.0";
+    CFBundleName = "JWRVideoModule";
+    CFBundlePackageType = "BNDL";
+    CFBundlePrincipalClass = "JWRVideoModule";
+    CFBundleShortVersionString = "1.0";
+    CFBundleVersion = "1";
+}

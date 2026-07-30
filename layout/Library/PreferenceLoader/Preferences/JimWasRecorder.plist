@@ -1,0 +1,9 @@
+{
+    entry = {
+        bundle = "JimWasRecorderPrefs";
+        cell = "PSLinkCell";
+        detail = "JWRRootListController";
+        isController = 1;
+        label = "JimWas Recorder";
+    };
+}
