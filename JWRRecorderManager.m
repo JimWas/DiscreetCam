@@ -343,7 +343,7 @@
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate value:[dateFormatter stringFromDate:NSDate.date]]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataMake value:@"Apple"]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:UIDevice.currentDevice.model]];
-    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.8.1"]];
+    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.0"]];
     if ([JWRPreferences shared].embedLocationMetadata) {
         NSDictionary *location = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Documents/JimWasRecorder/location.plist"];
         NSTimeInterval age = NSDate.date.timeIntervalSince1970 - [location[@"timestamp"] doubleValue];
@@ -488,6 +488,123 @@
         [self feedbackNotification:JWRNotifyHapticVideoStopped];
     });
 }
+- (NSError *)audioVideoError:(NSString *)description {
+    return [NSError errorWithDomain:@"com.jimwas.recorder.audio-video"
+                               code:1
+                           userInfo:@{NSLocalizedDescriptionKey:description ?: @"Audio video conversion failed."}];
+}
+- (void)finishAudioVideoConversionAtURL:(NSURL *)stagedURL
+                               audioURL:(NSURL *)audioURL
+                                success:(BOOL)success
+                                  error:(NSError *)error {
+    dispatch_async(self.queue, ^{
+        if (!success) {
+            if (stagedURL) [[NSFileManager defaultManager] removeItemAtURL:stagedURL error:nil];
+            JWRLog(@"audio video copy failed audio=%@ staged=%@ error=%@", audioURL.path, stagedURL.path, error);
+            [self failureFeedback:[NSString stringWithFormat:@"audio video copy failed error=%@", error]];
+            return;
+        }
+        NSURL *finishedURL = nil;
+        BOOL finalized = [self finalizeStagedVideoAtURL:stagedURL recovered:NO finalURL:&finishedURL];
+        if (!finalized) {
+            [self failureFeedback:@"audio video copy could not be finalized"];
+            return;
+        }
+        JWRLog(@"audio video copy finalized audio=%@ video=%@", audioURL.path, finishedURL.path);
+        if ([JWRPreferences shared].saveVideoToPhotos) {
+            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+                [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:finishedURL];
+            } completionHandler:^(BOOL photosSuccess, NSError *photosError) {
+                JWRLog(@"audio video Photos copy completed success=%d error=%@", photosSuccess, photosError);
+            }];
+        }
+    });
+}
+- (void)createVideoCopyForAudioURL:(NSURL *)audioURL {
+    if (!audioURL) return;
+    AVURLAsset *audioAsset = [AVURLAsset URLAssetWithURL:audioURL options:nil];
+    AVAssetTrack *audioTrack = [audioAsset tracksWithMediaType:AVMediaTypeAudio].firstObject;
+    CMTime duration = audioAsset.duration;
+    if (!audioTrack || !CMTIME_IS_NUMERIC(duration) || CMTimeGetSeconds(duration) <= 0.01) {
+        [self finishAudioVideoConversionAtURL:nil audioURL:audioURL success:NO
+                                       error:[self audioVideoError:@"The audio recording has no readable audio track."]];
+        return;
+    }
+
+    NSString *stagingDirectory = [self inProgressDirectory];
+    NSError *directoryError = nil;
+    [[NSFileManager defaultManager] createDirectoryAtPath:stagingDirectory
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:&directoryError];
+    if (directoryError) {
+        [self finishAudioVideoConversionAtURL:nil audioURL:audioURL success:NO error:directoryError];
+        return;
+    }
+    NSString *baseName = audioURL.URLByDeletingPathExtension.lastPathComponent;
+    NSURL *stagedURL = [NSURL fileURLWithPath:
+        [stagingDirectory stringByAppendingPathComponent:[baseName stringByAppendingPathExtension:@"mov"]]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:stagedURL.path]) {
+        stagedURL = [NSURL fileURLWithPath:[stagingDirectory stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"%@_%@.mov", baseName, NSUUID.UUID.UUIDString]]];
+    }
+
+    NSURL *templateURL = [NSBundle.mainBundle URLForResource:@"JWRBlackVideo" withExtension:@"mov"];
+    AVURLAsset *templateAsset = templateURL ? [AVURLAsset URLAssetWithURL:templateURL options:nil] : nil;
+    AVAssetTrack *templateTrack = [templateAsset tracksWithMediaType:AVMediaTypeVideo].firstObject;
+    CMTime templateDuration = templateAsset.duration;
+    if (!templateTrack || !CMTIME_IS_NUMERIC(templateDuration) || CMTimeGetSeconds(templateDuration) <= 0.01) {
+        [self finishAudioVideoConversionAtURL:stagedURL audioURL:audioURL success:NO
+                                       error:[self audioVideoError:@"The bundled black-video template is unavailable."]];
+        return;
+    }
+
+    AVMutableComposition *composition = [AVMutableComposition composition];
+    AVMutableCompositionTrack *compositionAudio =
+        [composition addMutableTrackWithMediaType:AVMediaTypeAudio preferredTrackID:kCMPersistentTrackID_Invalid];
+    AVMutableCompositionTrack *compositionVideo =
+        [composition addMutableTrackWithMediaType:AVMediaTypeVideo preferredTrackID:kCMPersistentTrackID_Invalid];
+    NSError *compositionError = nil;
+    BOOL insertedAudio = [compositionAudio insertTimeRange:CMTimeRangeMake(kCMTimeZero, duration)
+                                                  ofTrack:audioTrack
+                                                   atTime:kCMTimeZero
+                                                    error:&compositionError];
+    BOOL insertedVideo = [compositionVideo insertTimeRange:CMTimeRangeMake(kCMTimeZero, templateDuration)
+                                                  ofTrack:templateTrack
+                                                   atTime:kCMTimeZero
+                                                    error:&compositionError];
+    if (!insertedAudio || !insertedVideo || compositionError) {
+        [self finishAudioVideoConversionAtURL:stagedURL audioURL:audioURL success:NO
+                                       error:compositionError ?: [self audioVideoError:@"Could not assemble the audio-video composition."]];
+        return;
+    }
+    [compositionVideo scaleTimeRange:CMTimeRangeMake(kCMTimeZero, templateDuration) toDuration:duration];
+    compositionVideo.preferredTransform = templateTrack.preferredTransform;
+
+    AVAssetExportSession *exporter =
+        [[AVAssetExportSession alloc] initWithAsset:composition presetName:AVAssetExportPresetPassthrough];
+    if (!exporter || ![exporter.supportedFileTypes containsObject:AVFileTypeQuickTimeMovie]) {
+        [self finishAudioVideoConversionAtURL:stagedURL audioURL:audioURL success:NO
+                                       error:[self audioVideoError:@"QuickTime passthrough export is unavailable."]];
+        return;
+    }
+    exporter.outputURL = stagedURL;
+    exporter.outputFileType = AVFileTypeQuickTimeMovie;
+    exporter.shouldOptimizeForNetworkUse = YES;
+    exporter.metadata = @[
+        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate
+                     value:[[NSISO8601DateFormatter new] stringFromDate:NSDate.date]],
+        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.0"],
+        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:@"Audio-only black video"]
+    ];
+    JWRLog(@"audio video passthrough export started audio=%@ staged=%@ duration=%.3f",
+           audioURL.path, stagedURL.path, CMTimeGetSeconds(duration));
+    [exporter exportAsynchronouslyWithCompletionHandler:^{
+        BOOL success = exporter.status == AVAssetExportSessionStatusCompleted;
+        [self finishAudioVideoConversionAtURL:stagedURL audioURL:audioURL
+                                      success:success error:exporter.error];
+    }];
+}
 - (void)toggleAudio { dispatch_async(self.queue, ^{
     JWRLog(@"toggleAudio current=%d", self.audioRecording);
     if (self.desiredAudioRecording) {
@@ -525,6 +642,9 @@
     dispatch_async(self.queue, ^{
         JWRLog(@"audio recorder finished successfully=%d desired=%d", flag, self.desiredAudioRecording);
         self.audioRecording = NO;
+        if (flag && [JWRPreferences shared].saveAudioAsVideo) {
+            [self createVideoCopyForAudioURL:recorder.url];
+        }
         if (self.desiredAudioRecording) {
             self.desiredAudioRecording = NO;
             [self cancelHeartbeatTimer];

@@ -7,6 +7,28 @@ Because versions 1.0.x and 1.1.x were rapid device-debugging builds, their
 individual changes were not preserved in source control. They are grouped below
 rather than assigning unsupported details to a specific build.
 
+## [1.9.0] - 2026-07-30
+
+### Added
+
+- Optional **Create Video Copy of Audio** setting.
+- Post-recording passthrough composition export from audio-only M4A to a
+  genuine 720×1280 black-screen QuickTime movie.
+- Bundled one-frame H.264 template that is time-scaled to the audio duration
+  without re-encoding.
+- Crash-safe staging and atomic finalization for generated audio-video copies.
+- Photos-library copying for generated movies when **Copy Videos to Photos** is
+  enabled.
+
+### Changed
+
+- Audio-video copies follow the configured video save folder while original
+  M4A recordings remain in the default Documents folder.
+- The original M4A is preserved when conversion fails.
+- Generated movies reuse the original AAC stream and black H.264 template,
+  minimizing conversion time, memory use, and battery use.
+- QuickTime software metadata now identifies version 1.9.0.
+
 ## [1.8.1] - 2026-07-29
 
 ### Added

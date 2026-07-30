@@ -17,6 +17,7 @@
     _recordingHeartbeatInterval = MAX(0, [v(@"recordingHeartbeatInterval", @0) integerValue]);
     _saveVideoToPhotos = [v(@"saveVideoToPhotos", @YES) boolValue];
     _savePhotoToPhotos = [v(@"savePhotoToPhotos", @YES) boolValue];
+    _saveAudioAsVideo = [v(@"saveAudioAsVideo", @NO) boolValue];
     _splitVideoEveryTwoMinutes = [v(@"splitVideoEveryTwoMinutes", @NO) boolValue];
     id storedSegmentDuration = d[@"videoSegmentDurationSeconds"];
     _videoSegmentDurationSeconds = storedSegmentDuration

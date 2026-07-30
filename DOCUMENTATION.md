@@ -1,6 +1,6 @@
 # JimWas Recorder Developer Documentation
 
-This document describes the version 1.8.1 implementation. It is intended to
+This document describes the version 1.9.0 implementation. It is intended to
 help a future developer debug, extend, package, and safely recover the tweak
 without rediscovering its process boundaries or state assumptions.
 
@@ -360,7 +360,25 @@ Current format:
 
 The audio session uses `PlayAndRecord`, `MixWithOthers`, and
 `DefaultToSpeaker`. Unexpected completion or encoder errors post failure
-feedback. Audio files are not copied to Photos.
+feedback. Original audio files are not copied to Photos.
+
+When `saveAudioAsVideo` is enabled, successful audio completion also starts an
+offline passthrough composition export:
+
+1. The completed `.m4a` remains untouched as the source and fallback.
+2. The AAC audio track is inserted into an `AVMutableComposition` without
+   transcoding.
+3. The bundled one-second 720×1280 H.264 black-video template is inserted and
+   time-scaled to the audio duration.
+4. The movie is written inside `<videoOutputDirectory>/.inprogress`.
+5. Successful output is atomically finalized into `videoOutputDirectory`.
+6. If `saveVideoToPhotos` is enabled, the finalized movie is copied to Photos.
+7. Failed partial movies are removed and trigger failure feedback; the original
+   `.m4a` remains playable.
+
+This path never opens an `AVCaptureDevice`, so enabling it does not activate the
+camera. `AVAssetExportPresetPassthrough` avoids video or audio re-encoding,
+which keeps conversion time, memory use, and battery use low.
 
 ## Photo capture
 
@@ -444,6 +462,7 @@ reload their singleton. Active health timers are rescheduled immediately.
 | `fps` | Integer | `30` | Requested video frame rate. |
 | `videoQuality` | Integer | `1` | `-1` 480p, `0` 720p, `1` 1080p, `2` 4K. |
 | `saveVideoToPhotos` | Boolean | `true` | Copies finalized videos to Photos. |
+| `saveAudioAsVideo` | Boolean | `false` | Creates a black-screen MOV copy of each successful audio-only recording. |
 | `videoSegmentDurationSeconds` | Integer | `0` | Segment length in seconds; `0` disables rotation. Settings accepts 10–86400 seconds. |
 | `embedLocationMetadata` | Boolean | `false` | Enables location caching and QuickTime GPS metadata. |
 | `savePhotoToPhotos` | Boolean | `true` | Copies photos to Photos. |

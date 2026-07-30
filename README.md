@@ -8,6 +8,8 @@ The package adds:
 
 - Background video recording with microphone audio.
 - Background audio-only recording.
+- Optional shareable black-screen `.mov` copy of every audio-only recording,
+  without activating the camera.
 - Background photo capture.
 - Configurable volume-button triggers.
 - Video and audio modules for Control Center.
@@ -127,6 +129,7 @@ By default, original files and diagnostics live under:
 | --- | --- |
 | `<prefix>_<timestamp>.mov` | Finalized video with microphone audio. |
 | `<prefix>_<timestamp>.m4a` | Audio-only AAC recording. |
+| `<prefix>_<timestamp>.mov` from an audio trigger | Optional 720×1280 black-screen video containing the audio-only recording. |
 | `<prefix>_<timestamp>.jpg` | Captured photo. |
 | `Recovered_<name>.mov` | Playable staged movie recovered after an interruption or SpringBoard restart. |
 | `.inprogress/*.mov` | Active fragmented movies awaiting finalization or recovery. |
@@ -135,12 +138,13 @@ By default, original files and diagnostics live under:
 
 The video destination can be changed from **Settings → JimWas Recorder → Video
 Save Folder** to any writable absolute folder under `/var/mobile`. Finalized
-movies and their crash-safe `.inprogress` staging directory move to the selected
-folder. Audio-only recordings, photos, GPS cache, and `debug.log` remain in the
-default directory.
+movies, optional audio-video copies, and their crash-safe `.inprogress` staging
+directory move to the selected folder. Original audio-only recordings, photos,
+GPS cache, and `debug.log` remain in the default directory.
 
 Videos and photos may also be copied to Photos when their corresponding
-preferences are enabled. Audio-only files remain in Documents.
+preferences are enabled. Audio-only `.m4a` files remain in Documents; their
+optional `.mov` copies follow **Copy Videos to Photos**.
 
 ## Haptic meanings
 

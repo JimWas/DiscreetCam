@@ -9,6 +9,7 @@
 @property(nonatomic) NSInteger recordingHeartbeatInterval;
 @property(nonatomic) BOOL saveVideoToPhotos;
 @property(nonatomic) BOOL savePhotoToPhotos;
+@property(nonatomic) BOOL saveAudioAsVideo;
 @property(nonatomic) BOOL splitVideoEveryTwoMinutes;
 @property(nonatomic) NSInteger videoSegmentDurationSeconds;
 @property(nonatomic) BOOL embedLocationMetadata;
