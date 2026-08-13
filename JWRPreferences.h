@@ -7,7 +7,7 @@
 @property(nonatomic) BOOL triggersWhileAudioPlaying;
 @property(nonatomic) BOOL haptics;
 @property(nonatomic) NSInteger recordingHeartbeatInterval;
-@property(nonatomic) BOOL saveVideoToPhotos;
+@property(nonatomic) NSInteger videoStorageMode;
 @property(nonatomic) BOOL savePhotoToPhotos;
 @property(nonatomic) BOOL saveAudioAsVideo;
 @property(nonatomic) BOOL splitVideoEveryTwoMinutes;

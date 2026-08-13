@@ -7,6 +7,62 @@ Because versions 1.0.x and 1.1.x were rapid device-debugging builds, their
 individual changes were not preserved in source control. They are grouped below
 rather than assigning unsupported details to a specific build.
 
+## [1.9.3] - 2026-08-13
+
+### Added
+
+- New **Save Videos To** choice with **Save Folder Only**, **Camera Roll Only**,
+  and **Both** destinations.
+- Safe Camera Roll-only cleanup for camera recordings and optional black-screen
+  video copies created from audio recordings.
+
+### Changed
+
+- Camera Roll-only recordings are temporarily staged and validated locally,
+  imported into Photos, and removed from the save folder only after Photos
+  reports success.
+- A failed Photos import retains the local movie as a safety fallback and emits
+  failure feedback instead of deleting the only copy.
+- Existing `saveVideoToPhotos` preferences migrate automatically: enabled maps
+  to **Both**, while disabled maps to **Save Folder Only**.
+- The custom video-folder row is hidden while **Camera Roll Only** is selected.
+- QuickTime software metadata now identifies version 1.9.3.
+
+## [1.9.2] - 2026-08-03
+
+### Fixed
+
+- Reject header-only, empty, or otherwise unplayable staged movies instead of
+  publishing them as completed recordings.
+- Delete clear header-only failures while retaining nontrivial invalid staged
+  files in `.inprogress` for possible manual recovery.
+- Preserve the consecutive recovery-failure count until AVFoundation has
+  recorded healthy media for five seconds.
+- Stop automatic recovery after five consecutive failures, preventing an
+  unlimited loop that could create hundreds of empty MOV files.
+- Ignore stale delayed-retry blocks after recording is stopped or superseded.
+- Write diagnostics to `/var/mobile/Library/Logs/JimWasRecorder/debug.log`,
+  with Documents and `/tmp` fallbacks when the primary location is unavailable.
+
+### Changed
+
+- Recovery now uses exponential delays of 2, 4, 8, and 16 seconds before the
+  circuit breaker stops recording and sends a strong failure haptic.
+- QuickTime software metadata now identifies version 1.9.2.
+
+## [1.9.1] - 2026-07-31
+
+### Added
+
+- New teal camera-lens and audio-waveform product icon.
+- Home Screen icon resources at iPhone 2x and 3x sizes.
+- Settings preference icon.
+- 1024×1024 master artwork for package repositories and marketing.
+
+### Changed
+
+- QuickTime software metadata now identifies version 1.9.1.
+
 ## [1.9.0] - 2026-07-30
 
 ### Added

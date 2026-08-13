@@ -9,6 +9,11 @@
 #import <limits.h>
 #import <math.h>
 
+static const unsigned long long JWRMinimumPlayableMovieBytes = 16 * 1024;
+static const NSTimeInterval JWRMinimumPlayableMovieDuration = 0.10;
+static const NSInteger JWRMaximumConsecutiveRecoveryFailures = 5;
+static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
+
 @interface JWRRecorderManager () <AVCaptureFileOutputRecordingDelegate, AVCapturePhotoCaptureDelegate, AVAudioRecorderDelegate>
 @property(nonatomic) dispatch_queue_t queue;
 @property(nonatomic) AVCaptureSession *session;
@@ -25,11 +30,13 @@
 @property(nonatomic) BOOL desiredAudioRecording;
 @property(nonatomic) BOOL recoveryScanned;
 @property(nonatomic) NSInteger recoveryAttempts;
+@property(nonatomic) NSUInteger recordingGeneration;
 @property(nonatomic) dispatch_source_t segmentTimer;
 @property(nonatomic) dispatch_source_t heartbeatTimer;
 @property(nonatomic) dispatch_source_t watchdogTimer;
 @property(nonatomic, readwrite) BOOL videoRecording;
 @property(nonatomic, readwrite) BOOL audioRecording;
+- (void)handleFinalizedVideoAtURL:(NSURL *)finishedURL context:(NSString *)context;
 @end
 
 @implementation JWRRecorderManager
@@ -72,8 +79,45 @@
     NSString *recordingDirectory = stagedURL.URLByDeletingLastPathComponent.URLByDeletingLastPathComponent.path;
     return [NSURL fileURLWithPath:[recordingDirectory stringByAppendingPathComponent:name]];
 }
+- (BOOL)validateMovieAtURL:(NSURL *)url reason:(NSString **)reason {
+    if (!url || ![[NSFileManager defaultManager] fileExistsAtPath:url.path]) {
+        if (reason) *reason = @"file does not exist";
+        return NO;
+    }
+    NSError *attributesError = nil;
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:&attributesError];
+    unsigned long long bytes = [attributes[NSFileSize] unsignedLongLongValue];
+    if (attributesError || bytes < JWRMinimumPlayableMovieBytes) {
+        if (reason) *reason = [NSString stringWithFormat:@"file is too small (%llu bytes; error=%@)", bytes, attributesError];
+        return NO;
+    }
+
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+    NSTimeInterval duration = CMTIME_IS_NUMERIC(asset.duration) ? CMTimeGetSeconds(asset.duration) : 0;
+    BOOL hasVideo = [asset tracksWithMediaType:AVMediaTypeVideo].count > 0;
+    if (!hasVideo || !isfinite(duration) || duration < JWRMinimumPlayableMovieDuration) {
+        if (reason) *reason = [NSString stringWithFormat:@"missing video frames (hasVideo=%d duration=%.3f)", hasVideo, duration];
+        return NO;
+    }
+    return YES;
+}
 - (BOOL)finalizeStagedVideoAtURL:(NSURL *)stagedURL recovered:(BOOL)recovered finalURL:(NSURL **)finalURL {
     if (!stagedURL || ![[NSFileManager defaultManager] fileExistsAtPath:stagedURL.path]) return NO;
+    NSString *validationReason = nil;
+    if (![self validateMovieAtURL:stagedURL reason:&validationReason]) {
+        unsigned long long bytes = [[[[NSFileManager defaultManager] attributesOfItemAtPath:stagedURL.path error:nil]
+                                     objectForKey:NSFileSize] unsignedLongLongValue];
+        if (bytes < JWRMinimumPlayableMovieBytes) {
+            NSError *removeError = nil;
+            [[NSFileManager defaultManager] removeItemAtURL:stagedURL error:&removeError];
+            JWRLog(@"discarded header-only staged movie path=%@ bytes=%llu reason=%@ removeError=%@",
+                   stagedURL.path, bytes, validationReason, removeError);
+        } else {
+            JWRLog(@"retained nontrivial invalid staged movie for manual recovery path=%@ bytes=%llu reason=%@",
+                   stagedURL.path, bytes, validationReason);
+        }
+        return NO;
+    }
     NSURL *destination = [self finalURLForStagedURL:stagedURL recovered:recovered];
     if ([[NSFileManager defaultManager] fileExistsAtPath:destination.path]) {
         NSString *stem = destination.URLByDeletingPathExtension.lastPathComponent;
@@ -105,6 +149,15 @@
             if (playable) {
                 NSURL *recoveredURL = nil;
                 [self finalizeStagedVideoAtURL:url recovered:YES finalURL:&recoveredURL];
+            } else {
+                unsigned long long bytes = [attributes[NSFileSize] unsignedLongLongValue];
+                if (bytes < JWRMinimumPlayableMovieBytes) {
+                    NSError *removeError = nil;
+                    [[NSFileManager defaultManager] removeItemAtURL:url error:&removeError];
+                    JWRLog(@"removed header-only staged movie path=%@ bytes=%llu error=%@", url.path, bytes, removeError);
+                } else {
+                    JWRLog(@"retained nontrivial staged movie for manual recovery path=%@ bytes=%llu", url.path, bytes);
+                }
             }
         }
     }
@@ -343,7 +396,7 @@
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate value:[dateFormatter stringFromDate:NSDate.date]]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataMake value:@"Apple"]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:UIDevice.currentDevice.model]];
-    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.0"]];
+    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.3"]];
     if ([JWRPreferences shared].embedLocationMetadata) {
         NSDictionary *location = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Documents/JimWasRecorder/location.plist"];
         NSTimeInterval age = NSDate.date.timeIntervalSince1970 - [location[@"timestamp"] doubleValue];
@@ -360,6 +413,24 @@
         }
     }
     self.movieOutput.metadata = metadata;
+}
+- (void)scheduleHealthyRecordingConfirmationForOutput:(AVCaptureMovieFileOutput *)output {
+    NSUInteger generation = ++self.recordingGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(JWRHealthyRecordingConfirmationDelay * NSEC_PER_SEC)), self.queue, ^{
+        typeof(self) self = weakSelf;
+        if (!self || generation != self.recordingGeneration || !self.desiredVideoRecording || output != self.movieOutput) return;
+        NSTimeInterval recordedSeconds = CMTIME_IS_NUMERIC(output.recordedDuration) ? CMTimeGetSeconds(output.recordedDuration) : 0;
+        if (self.session.running && output.recording && isfinite(recordedSeconds) && recordedSeconds >= 1.0) {
+            NSInteger previousAttempts = self.recoveryAttempts;
+            self.recoveryAttempts = 0;
+            JWRLog(@"video recording confirmed healthy duration=%.3f previousRecoveryFailures=%ld",
+                   recordedSeconds, (long)previousAttempts);
+        } else {
+            JWRLog(@"video health confirmation pending session=%d output=%d duration=%.3f failures=%ld",
+                   self.session.running, output.recording, recordedSeconds, (long)self.recoveryAttempts);
+        }
+    });
 }
 - (void)beginVideoRecording {
     if (!self.desiredVideoRecording) return;
@@ -380,8 +451,8 @@
         [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
         self.videoRecording = YES;
         self.recoveryInProgress = NO;
-        self.recoveryAttempts = 0;
         JWRLog(@"video+audio recording started url=%@", self.videoURL.path);
+        [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
         [self scheduleSegmentTimerIfNeeded];
         [self scheduleWatchdogTimer];
         [self scheduleHeartbeatTimer];
@@ -395,10 +466,24 @@
     if (!self.desiredVideoRecording) return;
     self.recoveryInProgress = YES;
     self.recoveryAttempts++;
-    NSTimeInterval delay = MIN(10.0, MAX(1.0, (double)self.recoveryAttempts * 2.0));
+    if (self.recoveryAttempts >= JWRMaximumConsecutiveRecoveryFailures) {
+        JWRLog(@"video recovery circuit breaker opened after %ld consecutive failures", (long)self.recoveryAttempts);
+        self.desiredVideoRecording = NO;
+        self.recoveryInProgress = NO;
+        self.rollingSegment = NO;
+        self.recordingGeneration++;
+        [self cancelSegmentTimer];
+        [self cancelWatchdogTimer];
+        [self cancelHeartbeatTimer];
+        [self teardownCaptureSession];
+        [self failureFeedback:@"recording disabled after repeated camera failures; check debug.log before trying again"];
+        return;
+    }
+    NSTimeInterval delay = MIN(30.0, pow(2.0, (double)self.recoveryAttempts));
+    NSUInteger retryGeneration = ++self.recordingGeneration;
     JWRLog(@"video recovery attempt=%ld scheduled in %.1fs", (long)self.recoveryAttempts, delay);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), self.queue, ^{
-        if (!self.desiredVideoRecording) return;
+        if (!self.desiredVideoRecording || retryGeneration != self.recordingGeneration) return;
         [self teardownCaptureSession];
         [self beginVideoRecording];
     });
@@ -430,6 +515,7 @@
         self.desiredVideoRecording = NO;
         self.recoveryInProgress = NO;
         self.rollingSegment = NO;
+        self.recordingGeneration++;
         [self cancelSegmentTimer];
         [self cancelWatchdogTimer];
         if (self.movieOutput.recording) [self.movieOutput stopRecording];
@@ -456,16 +542,10 @@
 
         NSURL *finishedURL = nil;
         BOOL finalized = successfullyFinished && [self finalizeStagedVideoAtURL:url recovered:NO finalURL:&finishedURL];
-        if (finalized && [JWRPreferences shared].saveVideoToPhotos) {
-            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
-                [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:finishedURL];
-            } completionHandler:^(BOOL success, NSError *photosError) {
-                JWRLog(@"video Photos copy completed success=%d error=%@", success, photosError);
-            }];
-        }
+        if (finalized) [self handleFinalizedVideoAtURL:finishedURL context:@"video segment"];
         if (!isCurrentOutput) return;
 
-        if (!successfullyFinished || !finalized) {
+        if (self.desiredVideoRecording && (!successfullyFinished || !finalized)) {
             [self failureFeedback:[NSString stringWithFormat:@"video segment did not finalize error=%@", error]];
         }
         if (self.desiredVideoRecording && wasRolling && successfullyFinished && finalized) {
@@ -474,6 +554,7 @@
             [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
             self.videoRecording = YES;
             JWRLog(@"next crash-safe video+audio segment started url=%@", self.videoURL.path);
+            [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
             [self scheduleSegmentTimerIfNeeded];
             return;
         }
@@ -493,6 +574,33 @@
                                code:1
                            userInfo:@{NSLocalizedDescriptionKey:description ?: @"Audio video conversion failed."}];
 }
+- (void)handleFinalizedVideoAtURL:(NSURL *)finishedURL context:(NSString *)context {
+    if (!finishedURL) return;
+    NSInteger storageMode = [JWRPreferences shared].videoStorageMode;
+    if (storageMode == 0) {
+        JWRLog(@"%@ retained in save folder path=%@", context, finishedURL.path);
+        return;
+    }
+    BOOL deleteAfterImport = storageMode == 1;
+    [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+        [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:finishedURL];
+    } completionHandler:^(BOOL success, NSError *photosError) {
+        dispatch_async(self.queue, ^{
+            JWRLog(@"%@ Photos import completed success=%d photosOnly=%d error=%@", context, success, deleteAfterImport, photosError);
+            if (!success) {
+                [self failureFeedback:[NSString stringWithFormat:@"%@ could not save to Camera Roll; local fallback retained error=%@", context, photosError]];
+                return;
+            }
+            if (!deleteAfterImport) return;
+            NSError *removeError = nil;
+            BOOL removed = [[NSFileManager defaultManager] removeItemAtURL:finishedURL error:&removeError];
+            JWRLog(@"%@ Photos-only local cleanup path=%@ removed=%d error=%@", context, finishedURL.path, removed, removeError);
+            if (!removed && removeError) {
+                [self failureFeedback:[NSString stringWithFormat:@"%@ saved to Camera Roll but local cleanup failed error=%@", context, removeError]];
+            }
+        });
+    }];
+}
 - (void)finishAudioVideoConversionAtURL:(NSURL *)stagedURL
                                audioURL:(NSURL *)audioURL
                                 success:(BOOL)success
@@ -511,13 +619,7 @@
             return;
         }
         JWRLog(@"audio video copy finalized audio=%@ video=%@", audioURL.path, finishedURL.path);
-        if ([JWRPreferences shared].saveVideoToPhotos) {
-            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
-                [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:finishedURL];
-            } completionHandler:^(BOOL photosSuccess, NSError *photosError) {
-                JWRLog(@"audio video Photos copy completed success=%d error=%@", photosSuccess, photosError);
-            }];
-        }
+        [self handleFinalizedVideoAtURL:finishedURL context:@"audio video copy"];
     });
 }
 - (void)createVideoCopyForAudioURL:(NSURL *)audioURL {
@@ -594,7 +696,7 @@
     exporter.metadata = @[
         [self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate
                      value:[[NSISO8601DateFormatter new] stringFromDate:NSDate.date]],
-        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.0"],
+        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.3"],
         [self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:@"Audio-only black video"]
     ];
     JWRLog(@"audio video passthrough export started audio=%@ staged=%@ duration=%.3f",

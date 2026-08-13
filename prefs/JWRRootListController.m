@@ -52,14 +52,20 @@
         NSArray *definitions = [NSArray arrayWithContentsOfFile:path];
         NSMutableArray *built = [NSMutableArray array];
         NSDictionary *cells = @{@"PSGroupCell":@(PSGroupCell), @"PSLinkCell":@(PSLinkCell), @"PSLinkListCell":@(PSLinkListCell), @"PSListItemCell":@(PSListItemCell), @"PSTitleValueCell":@(PSTitleValueCell), @"PSSliderCell":@(PSSliderCell), @"PSSwitchCell":@(PSSwitchCell), @"PSStaticTextCell":@(PSStaticTextCell), @"PSEditTextCell":@(PSEditTextCell), @"PSSegmentCell":@(PSSegmentCell), @"PSButtonCell":@(PSButtonCell)};
-        NSSet *pickerKeys = [NSSet setWithArray:@[@"cameraPosition", @"zoom", @"fps", @"videoQuality", @"recordingHeartbeatInterval", @"doubleVolumeUpAction", @"doubleVolumeDownAction", @"bothVolumesAction"]];
-        NSInteger selectedPosition = [[[NSUserDefaults alloc] initWithSuiteName:JWRPrefsID] integerForKey:@"cameraPosition"];
+        NSSet *pickerKeys = [NSSet setWithArray:@[@"videoStorageMode", @"cameraPosition", @"zoom", @"fps", @"videoQuality", @"recordingHeartbeatInterval", @"doubleVolumeUpAction", @"doubleVolumeDownAction", @"bothVolumesAction"]];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:JWRPrefsID];
+        NSInteger selectedPosition = [defaults integerForKey:@"cameraPosition"];
+        id storedStorageMode = [defaults objectForKey:@"videoStorageMode"];
+        NSInteger selectedStorageMode = storedStorageMode
+            ? MIN(2, MAX(0, [storedStorageMode integerValue]))
+            : ([defaults objectForKey:@"saveVideoToPhotos"] == nil || [defaults boolForKey:@"saveVideoToPhotos"] ? 2 : 0);
         AVCaptureDevicePosition position = selectedPosition == 1 ? AVCaptureDevicePositionFront : AVCaptureDevicePositionBack;
         BOOL hasWide = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:position] != nil;
         BOOL hasUltraWide = position == AVCaptureDevicePositionBack &&
             [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInUltraWideCamera mediaType:AVMediaTypeVideo position:position] != nil;
         for (NSDictionary *originalDefinition in definitions) {
             NSMutableDictionary *definition = [originalDefinition mutableCopy];
+            if ([definition[@"key"] isEqualToString:@"videoOutputDirectory"] && selectedStorageMode == 1) continue;
             if ([definition[@"key"] isEqualToString:@"zoom"]) {
                 NSMutableArray *titles = [NSMutableArray array];
                 NSMutableArray *values = [NSMutableArray array];
@@ -119,7 +125,8 @@
             NSString *base = [[specifier.name componentsSeparatedByString:@":"] firstObject];
             specifier.name = [NSString stringWithFormat:@"%@: %@", base, titles[index]];
             [self reloadSpecifier:specifier];
-            if ([[specifier propertyForKey:@"key"] isEqualToString:@"cameraPosition"]) {
+            NSString *key = [specifier propertyForKey:@"key"];
+            if ([key isEqualToString:@"cameraPosition"] || [key isEqualToString:@"videoStorageMode"]) {
                 _specifiers = nil;
                 [self reloadSpecifiers];
             }

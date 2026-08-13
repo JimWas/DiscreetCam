@@ -11,14 +11,28 @@ void JWRLog(NSString *format, ...) {
     NSString *line = [NSString stringWithFormat:@"%@ [%@:%d] %@\n", [formatter stringFromDate:NSDate.date], NSProcessInfo.processInfo.processName, getpid(), message];
     NSLog(@"[JWR] %@", message);
     @try {
-        NSString *directory = @"/var/mobile/Documents/JimWasRecorder";
-        [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
-        NSString *path = [directory stringByAppendingPathComponent:@"debug.log"];
-        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) [@"" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-        [handle seekToEndOfFile];
-        [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [handle closeFile];
+        NSArray<NSString *> *directories = @[
+            @"/var/mobile/Library/Logs/JimWasRecorder",
+            @"/var/mobile/Documents/JimWasRecorder",
+            @"/tmp/JimWasRecorder"
+        ];
+        NSData *lineData = [line dataUsingEncoding:NSUTF8StringEncoding];
+        for (NSString *directory in directories) {
+            NSError *directoryError = nil;
+            if (![[NSFileManager defaultManager] createDirectoryAtPath:directory
+                                            withIntermediateDirectories:YES
+                                                             attributes:nil
+                                                                  error:&directoryError]) continue;
+            NSString *path = [directory stringByAppendingPathComponent:@"debug.log"];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:path] &&
+                ![[NSData data] writeToFile:path options:NSDataWritingAtomic error:nil]) continue;
+            NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+            if (!handle) continue;
+            [handle seekToEndOfFile];
+            [handle writeData:lineData];
+            [handle closeFile];
+            break;
+        }
     } @catch (NSException *exception) {
         NSLog(@"[JWR] Logger exception: %@", exception);
     }

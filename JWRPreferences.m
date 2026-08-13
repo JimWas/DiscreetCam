@@ -15,7 +15,10 @@
     _triggersWhileAudioPlaying = [v(@"triggersWhileAudioPlaying", @NO) boolValue];
     _haptics = [v(@"haptics", @YES) boolValue];
     _recordingHeartbeatInterval = MAX(0, [v(@"recordingHeartbeatInterval", @0) integerValue]);
-    _saveVideoToPhotos = [v(@"saveVideoToPhotos", @YES) boolValue];
+    id storedVideoStorageMode = d[@"videoStorageMode"];
+    _videoStorageMode = storedVideoStorageMode
+        ? MIN(2, MAX(0, [storedVideoStorageMode integerValue]))
+        : ([v(@"saveVideoToPhotos", @YES) boolValue] ? 2 : 0);
     _savePhotoToPhotos = [v(@"savePhotoToPhotos", @YES) boolValue];
     _saveAudioAsVideo = [v(@"saveAudioAsVideo", @NO) boolValue];
     _splitVideoEveryTwoMinutes = [v(@"splitVideoEveryTwoMinutes", @NO) boolValue];

@@ -3,6 +3,7 @@
         bundle = "JimWasRecorderPrefs";
         cell = "PSLinkCell";
         detail = "JWRRootListController";
+        icon = "icon.png";
         isController = 1;
         label = "JimWas Recorder";
     };

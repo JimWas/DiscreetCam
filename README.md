@@ -59,6 +59,7 @@ later, uses the iOS 16.5 SDK, and packages with the Theos rootless scheme.
 | `control` | Debian package metadata and package version. |
 | `DOCUMENTATION.md` | Detailed architecture, state machines, preferences, debugging, and maintenance notes. |
 | `CHANGELOG.md` | Release history through the current package version. |
+| `assets/JimWasRecorder-AppIcon-1024.png` | Master icon for package repositories, releases, and marketing. |
 
 ## Build
 
@@ -119,7 +120,7 @@ Locked** for screen-off capture.
 
 ## Output
 
-By default, original files and diagnostics live under:
+By default, original recordings live under:
 
 ```text
 /var/mobile/Documents/JimWasRecorder
@@ -134,17 +135,20 @@ By default, original files and diagnostics live under:
 | `Recovered_<name>.mov` | Playable staged movie recovered after an interruption or SpringBoard restart. |
 | `.inprogress/*.mov` | Active fragmented movies awaiting finalization or recovery. |
 | `location.plist` | Latest cached location used for optional video metadata. |
-| `debug.log` | Cross-process diagnostic log. |
+| `/var/mobile/Library/Logs/JimWasRecorder/debug.log` | Primary cross-process diagnostic log. |
 
 The video destination can be changed from **Settings → JimWas Recorder → Video
 Save Folder** to any writable absolute folder under `/var/mobile`. Finalized
 movies, optional audio-video copies, and their crash-safe `.inprogress` staging
 directory move to the selected folder. Original audio-only recordings, photos,
-GPS cache, and `debug.log` remain in the default directory.
+GPS cache remain in the default directory. Diagnostics use the Library Logs
+path, with the default output directory and `/tmp` as fallbacks.
 
-Videos and photos may also be copied to Photos when their corresponding
-preferences are enabled. Audio-only `.m4a` files remain in Documents; their
-optional `.mov` copies follow **Copy Videos to Photos**.
+**Save Videos To** supports Save Folder Only, Camera Roll Only, or Both. Camera
+Roll Only temporarily stages each MOV locally, imports it into Photos, and
+deletes the local source only after Photos confirms success. If import fails,
+the local file remains as a safety fallback. Audio-only `.m4a` files remain in
+Documents; their optional `.mov` copies follow the selected video destination.
 
 ## Haptic meanings
 

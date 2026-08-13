@@ -18,7 +18,7 @@ JWRRecorderApp_FRAMEWORKS = AVFoundation Photos CoreLocation AudioToolbox UIKit
 JWRRecorderApp_CFLAGS = -fobjc-arc
 JWRRecorderApp_INSTALL_PATH = /Applications
 JWRRecorderApp_CODESIGN_FLAGS = -Sapp/JWRRecorderApp.entitlements
-JWRRecorderApp_RESOURCE_FILES = app/JWRBlackVideo.mov
+JWRRecorderApp_RESOURCE_FILES = app/JWRBlackVideo.mov app/Icons/AppIcon60x60@2x.png app/Icons/AppIcon60x60@3x.png app/Icons/AppIcon29x29@2x.png app/Icons/AppIcon29x29@3x.png app/Icons/AppIcon20x20@2x.png app/Icons/AppIcon20x20@3x.png
 
 BUNDLE_NAME = JimWasRecorderPrefs
 JimWasRecorderPrefs_FILES = prefs/JWRRootListController.m JWRPreferences.m JWRLogger.m

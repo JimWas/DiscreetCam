@@ -1,6 +1,6 @@
 # JimWas Recorder Developer Documentation
 
-This document describes the version 1.9.0 implementation. It is intended to
+This document describes the version 1.9.3 implementation. It is intended to
 help a future developer debug, extend, package, and safely recover the tweak
 without rediscovering its process boundaries or state assumptions.
 
@@ -284,9 +284,13 @@ When the file-output delegate reports success:
 1. Treat a nil error as success.
 2. Also treat an error as success when
    `AVErrorRecordingSuccessfullyFinishedKey` is true.
-3. Atomically move the staged file into the main output directory.
-4. Add a UUID suffix if the final filename already exists.
-5. Copy the finalized URL to Photos if enabled.
+3. Require at least 16 KiB, a video track, and 0.10 seconds of numeric duration.
+4. Delete a failed staged file when it is smaller than 16 KiB; retain larger
+   invalid files in `.inprogress` for possible manual recovery.
+5. Atomically move a validated staged file into the main output directory.
+6. Add a UUID suffix if the final filename already exists.
+7. Apply `videoStorageMode`: keep the local file, import it and remove the local
+   source after success, or keep it and also import it.
 
 ### Configurable segment rotation
 
@@ -312,11 +316,13 @@ manager lifetime. A staged movie is moved to the main directory with a
 `Recovered_` prefix when:
 
 - `AVURLAsset.playable` is true.
-- Its duration is numeric.
-- Its duration is greater than 0.05 seconds.
+- It is at least 16 KiB and contains a video track.
+- Its duration is numeric and greater than 0.10 seconds.
 
-Unplayable staged files remain in `.inprogress` for later inspection. Recovered
-files are not automatically copied to Photos.
+Unplayable staged files below 16 KiB are logged and deleted so a failed capture
+cannot accumulate container-only MOV files. Larger invalid files remain staged
+for possible manual repair instead of risking destruction of captured media.
+Recovered files are not automatically copied to Photos.
 
 Fragmentation improves resilience but cannot guarantee recovery from every
 power loss, storage failure, or media-server crash.
@@ -340,11 +346,15 @@ The recovery path:
 2. Cancels the segment timer.
 3. Stops the current movie if possible so its delegate can finalize it.
 4. Forces teardown if stop has not completed after four seconds.
-5. Rebuilds the session with increasing retry delays.
+5. Rebuilds the session with exponential retry delays.
 
-Retry delay grows by two seconds per attempt and is capped at ten seconds.
-A successful restart resets the attempt counter. Watchdog restarts intentionally
-do not play the manual video-start vibration.
+Retries are scheduled after 2, 4, 8, and 16 seconds. A restart does not reset
+the failure count merely because `startRecording` returned. The counter resets
+only after the same output remains active and reports at least one second of
+recorded media at the five-second health check. After five consecutive failures,
+the circuit breaker clears the desired recording state, tears down capture, and
+posts a strong failure haptic. Watchdog restarts intentionally do not play the
+manual video-start vibration.
 
 ## Audio-only recording
 
@@ -372,7 +382,8 @@ offline passthrough composition export:
    time-scaled to the audio duration.
 4. The movie is written inside `<videoOutputDirectory>/.inprogress`.
 5. Successful output is atomically finalized into `videoOutputDirectory`.
-6. If `saveVideoToPhotos` is enabled, the finalized movie is copied to Photos.
+6. Apply `videoStorageMode`: retain locally, import and delete locally after
+   success, or retain locally and import.
 7. Failed partial movies are removed and trigger failure feedback; the original
    `.m4a` remains playable.
 
@@ -461,7 +472,7 @@ reload their singleton. Active health timers are rescheduled immediately.
 | `zoom` | Number | `1.0` | `0.5` requests ultra-wide, `1.0` requests wide. |
 | `fps` | Integer | `30` | Requested video frame rate. |
 | `videoQuality` | Integer | `1` | `-1` 480p, `0` 720p, `1` 1080p, `2` 4K. |
-| `saveVideoToPhotos` | Boolean | `true` | Copies finalized videos to Photos. |
+| `videoStorageMode` | Integer | `2` | `0` save folder only, `1` Camera Roll only, `2` both. Photos-only deletes the local finalized movie only after a successful import. |
 | `saveAudioAsVideo` | Boolean | `false` | Creates a black-screen MOV copy of each successful audio-only recording. |
 | `videoSegmentDurationSeconds` | Integer | `0` | Segment length in seconds; `0` disables rotation. Settings accepts 10–86400 seconds. |
 | `embedLocationMetadata` | Boolean | `false` | Enables location caching and QuickTime GPS metadata. |
@@ -474,6 +485,12 @@ reload their singleton. Active health timers are rescheduled immediately.
 | `triggersWhileAudioPlaying` | Boolean | `false` | Present in UI, but not currently enforced. |
 | `haptics` | Boolean | `true` | Enables recorder feedback notifications and playback. |
 | `recordingHeartbeatInterval` | Integer | `0` | `0`, `30`, `60`, `120`, or `300` seconds. |
+
+When `videoStorageMode` has never been stored, the loader migrates the former
+`saveVideoToPhotos` Boolean: `true` becomes `2` (Both) and `false` becomes `0`
+(Save Folder Only). Camera Roll-only capture must still stage and finalize a
+temporary local movie because Photos imports from a file URL. If import fails,
+the local file is retained as the only safe copy.
 
 ### Internal or dormant preferences
 
@@ -538,6 +555,15 @@ Expected startup messages include:
 [JWRRecorderApp:<pid>] service starting
 [SpringBoard:<pid>] SpringBoard trigger component loaded
 ```
+
+The primary persistent log is:
+
+```text
+/var/mobile/Library/Logs/JimWasRecorder/debug.log
+```
+
+If that location cannot be created, logging falls back to the standard output
+folder and then `/tmp/JimWasRecorder/debug.log`.
 
 Expected video-start messages include:
 
