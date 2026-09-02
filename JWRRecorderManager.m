@@ -29,6 +29,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @property(nonatomic) BOOL desiredVideoRecording;
 @property(nonatomic) BOOL desiredAudioRecording;
 @property(nonatomic) BOOL recoveryScanned;
+@property(nonatomic) BOOL videoChatAudioSessionActive;
 @property(nonatomic) NSInteger recoveryAttempts;
 @property(nonatomic) NSUInteger recordingGeneration;
 @property(nonatomic) dispatch_source_t segmentTimer;
@@ -273,6 +274,23 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
             JWRLog(@"multitasking camera enabled now=%d", s.multitaskingCameraAccessEnabled);
         }
     }
+    if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 18) {
+        // iOS 18 grants background camera only while an active video-chat
+        // audio session is running (the video-call continuation rule).
+        // AVCaptureSession's automatic config selects videoRecording mode,
+        // which loses the camera ~126ms after backgrounding.
+        s.automaticallyConfiguresApplicationAudioSession = NO;
+        NSError *audioSessionError = nil;
+        AVAudioSession *audioSession = AVAudioSession.sharedInstance;
+        BOOL configured = [audioSession setCategory:AVAudioSessionCategoryPlayAndRecord
+                                                mode:AVAudioSessionModeVideoChat
+                                             options:AVAudioSessionCategoryOptionDefaultToSpeaker
+                                               error:&audioSessionError];
+        BOOL activated = configured && [audioSession setActive:YES error:&audioSessionError];
+        self.videoChatAudioSessionActive = activated;
+        JWRLog(@"videoChat audio session configured=%d active=%d mode=%@ error=%@",
+               configured, activated, audioSession.mode, audioSessionError);
+    }
     [s startRunning];
     JWRLog(@"capture startRunning returned running=%d interrupted=%d", s.running, s.interrupted);
     return YES;
@@ -349,6 +367,12 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 - (void)teardownCaptureSession {
     [self cancelSegmentTimer];
     if (self.session.running) [self.session stopRunning];
+    if (self.videoChatAudioSessionActive && !self.desiredAudioRecording) {
+        NSError *deactivationError = nil;
+        BOOL deactivated = [AVAudioSession.sharedInstance setActive:NO error:&deactivationError];
+        JWRLog(@"videoChat audio session deactivated=%d error=%@", deactivated, deactivationError);
+        self.videoChatAudioSessionActive = NO;
+    }
     if (self.sessionErrorObserver) [NSNotificationCenter.defaultCenter removeObserver:self.sessionErrorObserver];
     if (self.sessionInterruptedObserver) [NSNotificationCenter.defaultCenter removeObserver:self.sessionInterruptedObserver];
     if (self.sessionInterruptionEndedObserver) [NSNotificationCenter.defaultCenter removeObserver:self.sessionInterruptionEndedObserver];

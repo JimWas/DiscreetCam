@@ -8,6 +8,10 @@
 #import "JWRLogger.h"
 #import "JWRRecorderManager.h"
 
+@interface FBApplicationProcess : NSObject
+@property(nonatomic, readonly) NSString *bundleIdentifier;
+@end
+
 static NSTimeInterval lastUp = 0, lastDown = 0;
 static BOOL upHeld = NO, downHeld = NO;
 static int reloadToken, videoToken, photoToken, triggerVideoToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
@@ -132,10 +136,70 @@ static void JWRButton(BOOL up) {
 }
 %end
 
+%hook FBApplicationProcess
+- (void)_setSceneLifecycleState:(long long)state {
+    if ([self.bundleIdentifier isEqualToString:@"com.jimwas.recorder.app"]) {
+        JWRLog(@"FBApplicationProcess _setSceneLifecycleState: bundle=%@ state=%ld", self.bundleIdentifier, (long)state);
+        if (state == 1) {
+            JWRLog(@"FBApplicationProcess SUPPRESSING background transition (state=1) for bundle=%@", self.bundleIdentifier);
+            return;
+        }
+    }
+    %orig;
+}
+- (void)_rebuildState:(id)arg {
+    if ([self.bundleIdentifier isEqualToString:@"com.jimwas.recorder.app"]) {
+        NSString *desc = [arg description];
+        JWRLog(@"FBApplicationProcess _rebuildState: bundle=%@ arg=%@", self.bundleIdentifier, desc);
+        if ([desc containsString:@"running-suspended"]) {
+            JWRLog(@"FBApplicationProcess SUPPRESSING running-suspended transition for bundle=%@", self.bundleIdentifier);
+            return;
+        }
+    }
+    %orig;
+}
+- (void)_noteStateDidUpdate:(id)arg {
+    if ([self.bundleIdentifier isEqualToString:@"com.jimwas.recorder.app"]) {
+        JWRLog(@"FBApplicationProcess _noteStateDidUpdate: bundle=%@ arg=%@", self.bundleIdentifier, arg);
+    }
+    %orig;
+}
+%end
+
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
     JWRLog(@"SpringBoard trigger component loaded");
+    {
+        const char *classesToCheck[] = {"FBApplicationProcess", "FBProcess", "FBProcessInfo", "FBApplicationProcessInfo", "FBSceneManager", "FBSApplicationProxy", "FBSProcess", "FBSProcessHandle", "FBScene", "FBApplicationScene", "FBWorkspace"};
+        int count = sizeof(classesToCheck) / sizeof(classesToCheck[0]);
+        JWRLog(@"introspect begin count=%d", count);
+        for (int i = 0; i < count; i++) {
+            Class c = NSClassFromString([NSString stringWithUTF8String:classesToCheck[i]]);
+            JWRLog(@"introspect class=%s exists=%d", classesToCheck[i], c != nil);
+        }
+        JWRLog(@"introspect done");
+        Class fbap = NSClassFromString(@"FBApplicationProcess");
+        if (fbap) {
+            unsigned int mc = 0;
+            Method *ms = class_copyMethodList(fbap, &mc);
+            JWRLog(@"FBApplicationProcess instance methods count=%u", mc);
+            for (unsigned int j = 0; j < mc && j < 120; j++) {
+                JWRLog(@"  meth: %@", NSStringFromSelector(method_getName(ms[j])));
+            }
+            free(ms);
+        }
+        Class fbp = NSClassFromString(@"FBProcess");
+        if (fbp) {
+            unsigned int mc = 0;
+            Method *ms = class_copyMethodList(fbp, &mc);
+            JWRLog(@"FBProcess instance methods count=%u", mc);
+            for (unsigned int j = 0; j < mc && j < 120; j++) {
+                JWRLog(@"  meth: %@", NSStringFromSelector(method_getName(ms[j])));
+            }
+            free(ms);
+        }
+    }
     [[JWRRecorderManager shared] recoverPendingRecordings];
     if (!JWRUsesForegroundCameraHost()) {
         notify_register_dispatch(JWRNotifyVideo.UTF8String, &videoToken, dispatch_get_main_queue(), ^(int t){
@@ -217,4 +281,10 @@ static void JWRButton(BOOL up) {
 }
 %end
 
-%ctor { @autoreleasepool { [JWRPreferences shared]; } }
+%ctor {
+    @autoreleasepool {
+        [JWRPreferences shared];
+        NSString *processName = NSProcessInfo.processInfo.processName;
+        JWRLog(@"tweak loaded in process=%@ pid=%d", processName, getpid());
+    }
+}
