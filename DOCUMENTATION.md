@@ -95,6 +95,8 @@ keeps a Core Foundation run loop alive. It owns:
 
 - Audio-only recording.
 - The audio-toggle Darwin notification receiver.
+- The iOS 18 camera-host launch relay (see [iOS 18 camera host launch
+  relay](#ios-18-camera-host-launch-relay)).
 - Background location caching.
 - Preference reload handling for the service process.
 
@@ -108,9 +110,12 @@ The preference bundle builds Settings rows programmatically from
 `PSListItemsController`; this avoids crashes encountered with list-item
 controllers on the target firmware.
 
-The two Control Center bundles post video or audio toggle notifications. Their
-local selected state is currently cosmetic and is not synchronized with the
-actual recorder state.
+The video Control Center module posts `JWRNotifyVideo` on the iOS 16 path and
+`JWRNotifyTriggerVideo` on iOS 18, where SpringBoard relays the companion-app
+launch through the launch service before the toggle is delivered (see
+[iOS 18 camera host launch relay](#ios-18-camera-host-launch-relay)). The audio
+module posts `JWRNotifyAudio` on every firmware. Their local selected state is
+currently cosmetic and is not synchronized with the actual recorder state.
 
 ## Event routing
 
@@ -119,9 +124,14 @@ different processes.
 
 | Constant | Notification string | Sender | Receiver |
 | --- | --- | --- | --- |
-| `JWRNotifyVideo` | `com.jimwas.recorder/toggleVideo` | Hardware trigger, video CC module, helper CLI mode | SpringBoard |
+| `JWRNotifyVideo` | `com.jimwas.recorder/toggleVideo` | Hardware trigger, video CC module, helper CLI mode (all iOS 16 path) | SpringBoard |
+| `JWRNotifyTriggerVideo` | `com.jimwas.recorder/triggerVideo` | Video CC module and helper CLI mode on iOS 18; hardware-independent diagnostics | SpringBoard |
+| `JWRNotifyLaunchCameraVideo` | `com.jimwas.recorder/launchCameraVideo` | SpringBoard iOS 18 host-launch relay | Launch service |
+| `JWRNotifyLaunchCameraPhoto` | `com.jimwas.recorder/launchCameraPhoto` | SpringBoard iOS 18 host-launch relay | Launch service |
+| `JWRNotifyForegroundVideo` | `com.jimwas.recorder/foregroundVideo` | Launch service host-launch relay, helper CLI mode | Companion app |
+| `JWRNotifyForegroundPhoto` | `com.jimwas.recorder/foregroundPhoto` | Launch service host-launch relay, helper CLI mode | Companion app |
 | `JWRNotifyAudio` | `com.jimwas.recorder/toggleAudio` | Hardware trigger, audio CC module, helper CLI mode | Launch service |
-| `JWRNotifyPhoto` | `com.jimwas.recorder/takePhoto` | Hardware trigger, helper CLI mode | SpringBoard |
+| `JWRNotifyPhoto` | `com.jimwas.recorder/takePhoto` | Hardware trigger, helper CLI mode (iOS 16 path) | SpringBoard |
 | `JWRNotifyReload` | `com.jimwas.recorder/reload` | Preferences | SpringBoard and launch service |
 | `JWRNotifyState` | `com.jimwas.recorder/stateChanged` | Recorder manager | No current consumer |
 | `JWRNotifyHapticStarted` | `com.jimwas.recorder/hapticStarted` | Audio recorder | SpringBoard |
@@ -138,10 +148,57 @@ different processes.
 --post-video
 --post-audio
 --post-photo
+--post-foreground-video
+--post-foreground-photo
+--trigger-video
 --service
 ```
 
-The first three post the corresponding Darwin notification and exit.
+The post modes deliver the corresponding Darwin notification and exit;
+`--trigger-video` runs the full SpringBoard trigger path, including the
+iOS 18 companion-app foreground launch.
+
+### iOS 18 camera host launch relay
+
+On iOS 18, video and photo triggers must foreground the companion app because
+SpringBoard can no longer hold the camera in the background. The obvious
+implementation — calling `LSApplicationWorkspace openApplicationWithBundleID:`
+from SpringBoard — has two hard constraints discovered on iOS 18.1.1:
+
+- The API silently refuses off-main-thread callers: it returns `NO` in ~20ms
+  with no error and no launch, regardless of process.
+- Called on SpringBoard's main thread it works, but blocks that thread for
+  ~10 seconds during a cold launch — freezing the entire UI. There is no
+  async variant on this firmware (`openApplicationWithBundleID:options:withResult:`
+  and `openApplicationWithBundleID:configuration:completionHandler:` are both
+  absent).
+
+The fix is a launch relay through the always-running launch service. The same
+API called from the service's main thread takes ~60ms, so the service can
+afford to block:
+
+1. SpringBoard receives a video/photo trigger on iOS 18, posts
+   `JWRNotifyLaunchCameraVideo`/`JWRNotifyLaunchCameraPhoto`, and returns
+   immediately (its main thread is busy for ~2ms instead of ~10s).
+2. The launch service, already running via launchd `KeepAlive`, receives the
+   notification on its main queue, calls `openApplicationWithBundleID:` for the
+   companion app inline on the main thread (dlopen-ing MobileCoreServices on
+   demand, since the class is not linked into the binary), and logs the result.
+3. 1.2 seconds after the open returns, the service posts
+   `JWRNotifyForegroundVideo`/`JWRNotifyForegroundPhoto`, giving the app time
+   to launch and register its receiver so the toggle is never lost.
+4. The companion app receives the toggle and starts or stops video/photo
+   capture.
+
+Measured on the iPhone 11 (iOS 18.1.1): trigger to recording start is ~1.7
+seconds with zero SpringBoard freeze, versus ~10 seconds frozen before.
+
+One consequence of this design: Darwin notifications are not delivered to the
+companion app while iOS has it suspended, so a toggle posted while the app is
+backgrounded waits until the app next wakes. Backgrounding interrupts iOS 18
+camera capture anyway and the in-flight segment is finalized safely, but the
+late toggle is applied with toggle semantics — a stale stop request can flip
+an already-stopped recording back on once the app wakes.
 
 ## Hardware trigger implementation
 
@@ -630,7 +687,12 @@ video watchdog scheduled every 5 seconds
   can produce partial, misleading operation.
 - Open the companion app and verify Camera and Microphone show Granted.
 - Inspect the camera-input, format, and `startRunning` log lines.
-- Confirm capture is executing in SpringBoard, not the launch service.
+- Confirm capture is executing in SpringBoard (iOS 16) or the companion app
+  (iOS 18), not the launch service.
+- On iOS 18, confirm the relay chain in the logs: `camera host launch delegated
+  to service` from SpringBoard, then `service opened camera host opened=1` from
+  the launch service. `opened=0` means the app was already running, which is
+  expected when it is already foregrounded.
 - Remove unsupported stored camera preferences if fallback also fails.
 
 ### Audio toggle does nothing
@@ -686,6 +748,10 @@ These are current source facts, not planned marketing features:
     package version.
 11. Private SpringBoard hooks, private ControlCenterUIKit behavior, haptic
     symbols, and numeric system sounds may change across firmware.
+12. Darwin notifications do not wake the suspended companion app on iOS 18, so
+    a toggle posted while it is backgrounded is delivered only when the app
+    next wakes, and is then applied with toggle semantics (see the launch-relay
+    note above).
 
 ## Safe extension patterns
 

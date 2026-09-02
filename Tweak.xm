@@ -19,17 +19,13 @@ static BOOL JWRUsesForegroundCameraHost(void) {
 }
 
 static void JWRLaunchForegroundCameraHost(NSString *notification) {
-    Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
-    SEL defaultSelector = NSSelectorFromString(@"defaultWorkspace");
-    SEL openSelector = NSSelectorFromString(@"openApplicationWithBundleID:");
-    id workspace = workspaceClass && [workspaceClass respondsToSelector:defaultSelector]
-        ? ((id (*)(id, SEL))objc_msgSend)(workspaceClass, defaultSelector) : nil;
-    BOOL opened = workspace && [workspace respondsToSelector:openSelector]
-        ? ((BOOL (*)(id, SEL, id))objc_msgSend)(workspace, openSelector, @"com.jimwas.recorder.app") : NO;
-    JWRLog(@"iOS 18 foreground camera host launch opened=%d notification=%@", opened, notification);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        notify_post(notification.UTF8String);
-    });
+    // openApplicationWithBundleID: only launches when called on SpringBoard's
+    // main thread, where it blocks ~10s (iOS 18.1.1 has no async variant).
+    // Delegate the launch to the service daemon, which can call it freely.
+    NSString *launch = [notification isEqualToString:JWRNotifyForegroundPhoto]
+        ? JWRNotifyLaunchCameraPhoto : JWRNotifyLaunchCameraVideo;
+    notify_post(launch.UTF8String);
+    JWRLog(@"camera host launch delegated to service (%@)", launch);
 }
 
 static void JWRPlayReliableVibration(void) {
@@ -167,11 +163,11 @@ static void JWRButton(BOOL up) {
                 if (up) upHeld = NO; else downHeld = NO;
             });
         }];
-        notify_register_dispatch(JWRNotifyTriggerVideo.UTF8String, &triggerVideoToken, dispatch_get_main_queue(), ^(int token) {
-            JWRLog(@"received diagnostic video trigger");
-            JWRRun(JWRActionVideo);
-        });
     }
+    notify_register_dispatch(JWRNotifyTriggerVideo.UTF8String, &triggerVideoToken, dispatch_get_main_queue(), ^(int token) {
+        JWRLog(@"received video trigger from Control Center or diagnostics");
+        JWRRun(JWRActionVideo);
+    });
     notify_register_dispatch(JWRNotifyHapticStarted.UTF8String, &hapticStartedToken, dispatch_get_main_queue(), ^(int t){
         if (![JWRPreferences shared].haptics) return;
         AudioServicesPlaySystemSound(1520);

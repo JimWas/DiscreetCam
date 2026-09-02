@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <notify.h>
 #import "../JWRLogger.h"
+#import "../JWRConstants.h"
 
 @interface CCUIToggleModule : NSObject
 - (void)refreshState;
@@ -8,6 +9,11 @@
 @interface JWRVideoModule : CCUIToggleModule
 @property(nonatomic) BOOL selected;
 @end
+
+static BOOL JWRUsesForegroundCameraHost(void) {
+    return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 18;
+}
+
 @implementation JWRVideoModule
 - (UIImage *)iconGlyph { return [UIImage systemImageNamed:@"video.fill"]; }
 - (UIImage *)selectedIconGlyph { return [UIImage systemImageNamed:@"video.fill"]; }
@@ -16,7 +22,12 @@
 - (void)setSelected:(BOOL)selected {
     _selected = selected;
     JWRLog(@"Control Center video tapped selected=%d", selected);
-    notify_post("com.jimwas.recorder/toggleVideo");
+    // iOS 18 has no toggleVideo receiver; the trigger notification routes
+    // through SpringBoard, which foregrounds the companion app first.
+    if (JWRUsesForegroundCameraHost())
+        notify_post(JWRNotifyTriggerVideo.UTF8String);
+    else
+        notify_post(JWRNotifyVideo.UTF8String);
     [self refreshState];
 }
 @end

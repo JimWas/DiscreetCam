@@ -11,9 +11,29 @@ rather than assigning unsupported details to a specific build.
 
 ### Fixed
 
+- Eliminate the ~10 second SpringBoard freeze on every iOS 18 video/photo
+  trigger. `openApplicationWithBundleID:` must run on a process's main thread
+  or it silently refuses to launch the app, and iOS 18.1.1 has no async
+  variant, so SpringBoard now delegates the open to the companion launch
+  service, which performs it on its own main thread in ~60ms. Trigger-to-
+  recording latency dropped from ~10s with a frozen UI to ~1.7s.
+- Route the Control Center video module through the trigger notification on
+  iOS 18 so tapping it foregrounds the companion app and toggles video instead
+  of posting a notification that no process receives; the iOS 16 module keeps
+  posting the direct toggle. The trigger receiver now registers on every
+  firmware, which also makes `--trigger-video` work on the iOS 16 path.
 - Declare **Legacy arm64e Support** (`oldabi` 2.0.1 or newer) as a package
   dependency and document it as the first troubleshooting check for partial
   injection, failed video capture, or missing haptic feedback on Dopamine.
+
+### Known Issues
+
+- Darwin notifications are not delivered to the companion app while iOS has
+  suspended it, so a video toggle posted while the app is backgrounded waits
+  until the app next wakes. Because backgrounding interrupts iOS 18 camera
+  capture anyway, footage is still finalized safely, but a late-delivered
+  toggle is applied with toggle semantics and can flip an already-stopped
+  recording back on.
 
 ## [2.0.0] - 2026-09-02
 
