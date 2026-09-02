@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+SERVICE=/var/jb/Library/LaunchDaemons/com.jimwas.recorder.service.plist
+if [ -f "$SERVICE" ]; then
+    launchctl bootstrap system "$SERVICE" >/dev/null 2>&1 || true
+    launchctl kickstart -k user/foreground/com.jimwas.recorder.service >/dev/null 2>&1 || true
+fi
+
+exit 0

@@ -396,7 +396,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate value:[dateFormatter stringFromDate:NSDate.date]]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataMake value:@"Apple"]];
     [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:UIDevice.currentDevice.model]];
-    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.3"]];
+    [metadata addObject:[self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 2.0.1"]];
     if ([JWRPreferences shared].embedLocationMetadata) {
         NSDictionary *location = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Documents/JimWasRecorder/location.plist"];
         NSTimeInterval age = NSDate.date.timeIntervalSince1970 - [location[@"timestamp"] doubleValue];
@@ -696,7 +696,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
     exporter.metadata = @[
         [self metadataItem:AVMetadataIdentifierQuickTimeMetadataCreationDate
                      value:[[NSISO8601DateFormatter new] stringFromDate:NSDate.date]],
-        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 1.9.3"],
+        [self metadataItem:AVMetadataIdentifierQuickTimeMetadataSoftware value:@"JimWas Recorder 2.0.1"],
         [self metadataItem:AVMetadataIdentifierQuickTimeMetadataModel value:@"Audio-only black video"]
     ];
     JWRLog(@"audio video passthrough export started audio=%@ staged=%@ duration=%.3f",

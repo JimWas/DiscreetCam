@@ -1,9 +1,9 @@
 Package: com.jimwas.recorder
 Name: JimWas Recorder
-Version: 1.9.3
+Version: 2.0.1
 Architecture: iphoneos-arm64
-Description: Background photo, video, and audio capture with configurable hardware triggers and Control Center modules.
+Description: Discreet photo, video, and audio capture with iOS 18 foreground camera compatibility, configurable hardware triggers, and Control Center modules.
 Maintainer: JimWas
 Author: JimWas
 Section: Tweaks
-Depends: mobilesubstrate, preferenceloader
+Depends: mobilesubstrate, preferenceloader, oldabi (>= 2.0.1)

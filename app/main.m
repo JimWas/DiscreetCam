@@ -33,6 +33,9 @@ int main(int argc, char *argv[]) {
     if (argc > 1 && strcmp(argv[1], "--post-video") == 0) { notify_post(JWRNotifyVideo.UTF8String); return 0; }
     if (argc > 1 && strcmp(argv[1], "--post-audio") == 0) { notify_post(JWRNotifyAudio.UTF8String); return 0; }
     if (argc > 1 && strcmp(argv[1], "--post-photo") == 0) { notify_post(JWRNotifyPhoto.UTF8String); return 0; }
+    if (argc > 1 && strcmp(argv[1], "--post-foreground-video") == 0) { notify_post(JWRNotifyForegroundVideo.UTF8String); return 0; }
+    if (argc > 1 && strcmp(argv[1], "--post-foreground-photo") == 0) { notify_post(JWRNotifyForegroundPhoto.UTF8String); return 0; }
+    if (argc > 1 && strcmp(argv[1], "--trigger-video") == 0) { notify_post(JWRNotifyTriggerVideo.UTF8String); return 0; }
     if (argc > 1 && strcmp(argv[1], "--service") == 0) { RunService(); return 0; }
     @autoreleasepool { JWRLog(@"UI app starting"); return UIApplicationMain(argc, argv, nil, NSStringFromClass(JWRAppDelegate.class)); }
 }

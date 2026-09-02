@@ -9,8 +9,8 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon29x29</string><string>AppIcon20x20</string></array>
 <key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon29x29</string><string>AppIcon20x20</string></array></dict></dict>
-<key>CFBundleShortVersionString</key><string>1.9.3</string>
-<key>CFBundleVersion</key><string>193</string>
+<key>CFBundleShortVersionString</key><string>2.0.1</string>
+<key>CFBundleVersion</key><string>201</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>NSCameraUsageDescription</key><string>Captures photos and videos when you explicitly activate a configured recorder control.</string>
 <key>NSMicrophoneUsageDescription</key><string>Records microphone audio when you explicitly activate a configured recorder control.</string>

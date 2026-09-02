@@ -4,6 +4,27 @@ This document describes the version 1.9.3 implementation. It is intended to
 help a future developer debug, extend, package, and safely recover the tweak
 without rediscovering its process boundaries or state assumptions.
 
+## Required jailbreak packages
+
+The tested iOS 16.3 Dopamine configuration requires all of the following:
+
+- ElleKit or compatible tweak injection.
+- PreferenceLoader.
+- **Legacy arm64e Support**, Debian package `oldabi`, version 2.0.1 or newer.
+
+`oldabi` is a runtime requirement, not merely a build dependency. Without it,
+the arm64e tweak can partially inject: SpringBoard hooks and diagnostic messages
+may appear while camera capture and physical feedback still fail. That symptom
+can be mistaken for an AVFoundation permission or process-ownership problem.
+Always verify this dependency before changing capture architecture:
+
+```sh
+dpkg-query -W oldabi
+```
+
+The package `control` file declares `oldabi (>= 2.0.1)` so normal package-manager
+installation enforces the requirement.
+
 ## Design goals
 
 JimWas Recorder is optimized for low-attention, resilient capture:
@@ -603,6 +624,10 @@ video watchdog scheduled every 5 seconds
 
 ### Trigger logs but no video starts
 
+- Run `dpkg-query -W oldabi` first. Install or repair **Legacy arm64e Support**
+  2.0.1 or newer if the query fails. Do not infer that injection is healthy
+  merely because trigger lines appear in the log; missing legacy ABI support
+  can produce partial, misleading operation.
 - Open the companion app and verify Camera and Microphone show Granted.
 - Inspect the camera-input, format, and `startRunning` log lines.
 - Confirm capture is executing in SpringBoard, not the launch service.
@@ -731,13 +756,15 @@ writer path has survived long locked-screen tests.
    dpkg-deb -c packages/com.jimwas.recorder_<version>_iphoneos-arm64.deb
    ```
 
-7. Install on a test device with SSH available.
-8. Verify Settings, both Control Center modules, companion permissions, and
+7. Confirm `dpkg-query -W oldabi` reports Legacy arm64e Support 2.0.1 or newer
+   on every arm64e test device.
+8. Install on a test device with SSH available.
+9. Verify Settings, both Control Center modules, companion permissions, and
    service startup.
-9. Record and finalize a short rear-camera clip.
-10. Record and finalize a short front-camera clip.
-11. Test short, 120-second, disabled, and changed-while-recording segment
+10. Record and finalize a short rear-camera clip.
+11. Record and finalize a short front-camera clip.
+12. Test short, 120-second, disabled, and changed-while-recording segment
     settings.
-12. Test screen lock, wake suppression, heartbeat, and stop feedback.
-13. Review `debug.log` for runtime errors.
-14. Preserve the previous known-good `.deb` for rollback.
+13. Test screen lock, wake suppression, heartbeat, and stop feedback.
+14. Review `debug.log` for runtime errors.
+15. Preserve the previous known-good `.deb` for rollback.

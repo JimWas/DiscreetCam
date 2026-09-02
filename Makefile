@@ -8,7 +8,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = JimWasRecorder
 JimWasRecorder_FILES = Tweak.xm JWRRecorderManager.m JWRPreferences.m JWRLogger.m
-JimWasRecorder_FRAMEWORKS = AVFoundation Photos AudioToolbox UIKit
+JimWasRecorder_FRAMEWORKS = AVFoundation AVFAudio Photos AudioToolbox UIKit
 JimWasRecorder_CFLAGS = -fobjc-arc
 JimWasRecorder_LDFLAGS = -Wl,-undefined,dynamic_lookup
 

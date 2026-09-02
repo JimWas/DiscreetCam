@@ -7,6 +7,83 @@ Because versions 1.0.x and 1.1.x were rapid device-debugging builds, their
 individual changes were not preserved in source control. They are grouped below
 rather than assigning unsupported details to a specific build.
 
+## [Unreleased]
+
+### Fixed
+
+- Declare **Legacy arm64e Support** (`oldabi` 2.0.1 or newer) as a package
+  dependency and document it as the first troubleshooting check for partial
+  injection, failed video capture, or missing haptic feedback on Dopamine.
+
+## [2.0.0] - 2026-09-02
+
+### Added
+
+- Add an iOS 18 camera compatibility path that foregrounds the companion app
+  and owns video/photo capture there, avoiding SpringBoard's new background
+  camera denial while retaining the original iOS 16 SpringBoard path.
+- Add explicit foreground video/photo diagnostic notifications for device tests.
+- Bootstrap the mobile launch service during package installation on newer
+  Dopamine launchd domains.
+
+## [2.0.1] - 2026-09-02
+
+### Fixed
+
+- Detect iOS 18 hardware volume presses through SpringBoard's system-volume
+  notification because the legacy `SBVolumeControl` method hook no longer
+  receives the physical button events on iOS 18.1.1.
+- Add an end-to-end diagnostic video trigger for validating foreground app
+  launch and camera routing independently of hardware input.
+
+## [1.9.9] - 2026-08-20
+
+### Fixed
+
+- Restore video and photo capture handling to SpringBoard, matching the last
+  configuration proven to record successfully on iOS 16.3.
+- Keep audio handling in the companion launch service and preserve the newer
+  diagnostics and reliable vibration fallback.
+
+## [1.9.8] - 2026-08-20
+
+### Fixed
+
+- Add standard system-vibration and heavy-impact fallbacks when private patterned
+  vibration calls execute without producing physical feedback.
+
+## [1.9.7] - 2026-08-20
+
+### Added
+
+- Add an in-app diagnostic log viewer with refresh and copy controls.
+- Log exact authorization values, application lifecycle changes, background time,
+  and recorder-service readiness from the companion app.
+
+## [1.9.6] - 2026-08-20
+
+### Added
+
+- Add a companion-app control to reset Camera, Microphone, Photos, and Location
+  permissions for JimWas Recorder, with confirmation and explicit error results.
+
+## [1.9.5] - 2026-08-20
+
+### Fixed
+
+- Correct the private AVFoundation nonstandard-client entitlement name and add
+  the platform capture/background-camera permissions required by the recorder
+  service on iOS 16.
+
+## [1.9.4] - 2026-08-20
+
+### Fixed
+
+- Route video and photo capture through the entitled companion service instead
+  of SpringBoard, avoiding background-camera interruption failures on iOS 16.
+- Keep SpringBoard responsible only for hardware triggers and haptic feedback,
+  preventing duplicate capture handlers across processes.
+
 ## [1.9.3] - 2026-08-13
 
 ### Added

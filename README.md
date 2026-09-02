@@ -34,6 +34,9 @@ The package adds:
 
 - A compatible iPhone running iOS 16.
 - Dopamine or another compatible rootless jailbreak environment.
+- **Legacy arm64e Support** (`oldabi` 2.0.1 or newer). This is mandatory on
+  the tested Dopamine/arm64e configuration; the recorder can partially load
+  yet fail to capture or provide feedback when it is missing.
 - ElleKit/Substrate-compatible tweak injection.
 - PreferenceLoader.
 - Theos with an iOS SDK capable of building the configured target.
@@ -77,6 +80,18 @@ packages/com.jimwas.recorder_<version>_iphoneos-arm64.deb
 ```
 
 ## Install
+
+Before installing JimWas Recorder, confirm **Legacy arm64e Support** is
+installed from the jailbreak package manager. Its Debian package identifier is
+`oldabi`:
+
+```sh
+dpkg-query -W oldabi
+```
+
+The command must report version 2.0.1 or newer. The JimWas Recorder package
+also declares this dependency, so compatible package managers should install
+or require it automatically.
 
 Copy the package to the device and install it as root:
 
