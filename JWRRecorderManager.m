@@ -14,6 +14,8 @@ static const NSTimeInterval JWRMinimumPlayableMovieDuration = 0.10;
 static const NSInteger JWRMaximumConsecutiveRecoveryFailures = 5;
 static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 
+static int recorderVideoStateToken, recorderAudioStateToken;
+
 @interface JWRRecorderManager () <AVCaptureFileOutputRecordingDelegate, AVCapturePhotoCaptureDelegate, AVAudioRecorderDelegate>
 @property(nonatomic) dispatch_queue_t queue;
 @property(nonatomic) AVCaptureSession *session;
@@ -43,7 +45,12 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @implementation JWRRecorderManager
 + (instancetype)shared {
     static JWRRecorderManager *m; static dispatch_once_t once;
-    dispatch_once(&once, ^{ m = [self new]; m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL); });
+    dispatch_once(&once, ^{
+        m = [self new];
+        m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL);
+        notify_register_plain(JWRNotifyVideoState.UTF8String, &recorderVideoStateToken);
+        notify_register_plain(JWRNotifyAudioState.UTF8String, &recorderAudioStateToken);
+    });
     return m;
 }
 - (NSString *)outputDirectory {
@@ -295,9 +302,28 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
     JWRLog(@"capture startRunning returned running=%d interrupted=%d", s.running, s.interrupted);
     return YES;
 }
+static BOOL JWRIsLaunchServiceInstance(void) {
+    // The companion UI app and the launch daemon are the same executable; the
+    // daemon is the one launched with --service.
+    return [NSProcessInfo.processInfo.arguments containsObject:@"--service"];
+}
+- (BOOL)processPublishesVideoState {
+    // Video capture runs in SpringBoard on iOS 16 and in the foreground
+    // companion app on iOS 18; audio always runs in the --service daemon.
+    return !JWRIsLaunchServiceInstance();
+}
+- (void)publishRecorderState {
+    if ([self processPublishesVideoState]) {
+        notify_set_state(recorderVideoStateToken, self.videoRecording ? 1 : 0);
+        notify_post(JWRNotifyVideoState.UTF8String);
+    } else {
+        notify_set_state(recorderAudioStateToken, self.audioRecording ? 1 : 0);
+        notify_post(JWRNotifyAudioState.UTF8String);
+    }
+}
 - (void)feedbackNotification:(NSString *)notification {
     if ([JWRPreferences shared].haptics) notify_post(notification.UTF8String);
-    notify_post(JWRNotifyState.UTF8String);
+    [self publishRecorderState];
 }
 - (void)failureFeedback:(NSString *)reason {
     JWRLog(@"recording health failure: %@", reason);
@@ -474,6 +500,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         }
         [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
         self.videoRecording = YES;
+        [self publishRecorderState];
         self.recoveryInProgress = NO;
         JWRLog(@"video+audio recording started url=%@", self.videoURL.path);
         [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
@@ -577,6 +604,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
             [self applyVideoMetadata];
             [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
             self.videoRecording = YES;
+            [self publishRecorderState];
             JWRLog(@"next crash-safe video+audio segment started url=%@", self.videoURL.path);
             [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
             [self scheduleSegmentTimerIfNeeded];

@@ -19,12 +19,31 @@ rather than assigning unsupported details to a specific build.
   recording latency dropped from ~10s with a frozen UI to ~1.7s.
 - Route the Control Center video module through the trigger notification on
   iOS 18 so tapping it foregrounds the companion app and toggles video instead
-  of posting a notification that no process receives; the iOS 16 module keeps
-  posting the direct toggle. The trigger receiver now registers on every
-  firmware, which also makes `--trigger-video` work on the iOS 16 path.
+  of posting a notification that no process receives; the trigger receiver now
+  registers on every firmware, which also makes `--trigger-video` work on the
+  iOS 16 path.
 - Declare **Legacy arm64e Support** (`oldabi` 2.0.1 or newer) as a package
   dependency and document it as the first troubleshooting check for partial
   injection, failed video capture, or missing haptic feedback on Dopamine.
+- Synchronize the Control Center video and audio toggles with the actual
+  recorder state: the recorder publishes a 0/1 active flag on separate
+  single-writer video and audio state notifications that both modules
+  subscribe to, so a toggle no longer stays lit after a denied trigger or
+  fails to show a recording started from the hardware buttons. State publishes
+  on every recording start and stop, including watchdog recovery and segment
+  rolls, and separate writers mean concurrent video/audio transitions cannot
+  overwrite each other.
+- Route the Control Center modules through SpringBoard's shared trigger
+  receivers on every firmware (the audio module gains `JWRNotifyTriggerAudio`),
+  so the **Enabled** and locked-screen gates apply to Control Center toggles
+  exactly like volume-button triggers; the iOS 16 video module previously
+  posted the direct toggle and ignored both gates.
+- Remove the inactive **Allow While Other Audio Plays** Settings row, which
+  stored a preference that no code enforced.
+- Sanitize the filename prefix (strip slashes, fall back when blank) so a
+  path-like prefix cannot break output-file naming.
+- Cap `debug.log` at 5 MB and remove SpringBoard startup method-list
+  introspection, preventing unbounded log growth from the always-on service.
 
 ### Known Issues
 

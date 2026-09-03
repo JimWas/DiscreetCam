@@ -33,7 +33,11 @@
     _fps = [v(@"fps", @30) integerValue];
     _videoQuality = [v(@"videoQuality", @1) integerValue];
     _photoQuality = [v(@"photoQuality", @0.92) doubleValue];
-    _filenamePrefix = v(@"filenamePrefix", @"JWR");
+    NSString *prefix = v(@"filenamePrefix", @"JWR");
+    if (![prefix isKindOfClass:NSString.class]) prefix = @"JWR";
+    prefix = [prefix stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    prefix = [prefix stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    _filenamePrefix = prefix.length ? prefix : @"JWR";
     NSString *requestedVideoDirectory = v(@"videoOutputDirectory", @"/var/mobile/Documents/JimWasRecorder");
     NSString *standardizedVideoDirectory = [requestedVideoDirectory isKindOfClass:NSString.class]
         ? requestedVideoDirectory.stringByStandardizingPath : @"";

@@ -1,6 +1,8 @@
 #import "JWRLogger.h"
 #import <unistd.h>
 
+static const unsigned long long JWRMaxLogFileBytes = 5 * 1024 * 1024;
+
 void JWRLog(NSString *format, ...) {
     va_list args; va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
@@ -28,7 +30,15 @@ void JWRLog(NSString *format, ...) {
                 ![[NSData data] writeToFile:path options:NSDataWritingAtomic error:nil]) continue;
             NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
             if (!handle) continue;
-            [handle seekToEndOfFile];
+            unsigned long long size = [handle seekToEndOfFile];
+            if (size > JWRMaxLogFileBytes) {
+                [handle closeFile];
+                [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+                if (![[NSData data] writeToFile:path options:NSDataWritingAtomic error:nil]) continue;
+                handle = [NSFileHandle fileHandleForWritingAtPath:path];
+                if (!handle) continue;
+                [handle seekToEndOfFile];
+            }
             [handle writeData:lineData];
             [handle closeFile];
             break;

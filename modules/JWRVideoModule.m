@@ -10,11 +10,32 @@
 @property(nonatomic) BOOL selected;
 @end
 
-static BOOL JWRUsesForegroundCameraHost(void) {
-    return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 18;
-}
+static int JWRStateToken;
+static __weak JWRVideoModule *JWRSharedVideoModule;
 
 @implementation JWRVideoModule
++ (void)load {
+    notify_register_dispatch(JWRNotifyVideoState.UTF8String, &JWRStateToken, dispatch_get_main_queue(), ^(int token) {
+        JWRVideoModule *module = JWRSharedVideoModule;
+        if (!module) return;
+        uint64_t state = 0;
+        notify_get_state(token, &state);
+        BOOL active = state != 0;
+        if (module->_selected != active) {
+            module->_selected = active;
+            [module refreshState];
+        }
+    });
+}
+- (instancetype)init {
+    if ((self = [super init])) {
+        JWRSharedVideoModule = self;
+        uint64_t state = 0;
+        notify_get_state(JWRStateToken, &state);
+        _selected = state != 0;
+    }
+    return self;
+}
 - (UIImage *)iconGlyph { return [UIImage systemImageNamed:@"video.fill"]; }
 - (UIImage *)selectedIconGlyph { return [UIImage systemImageNamed:@"video.fill"]; }
 - (UIColor *)selectedColor { return UIColor.systemRedColor; }
@@ -22,12 +43,23 @@ static BOOL JWRUsesForegroundCameraHost(void) {
 - (void)setSelected:(BOOL)selected {
     _selected = selected;
     JWRLog(@"Control Center video tapped selected=%d", selected);
-    // iOS 18 has no toggleVideo receiver; the trigger notification routes
-    // through SpringBoard, which foregrounds the companion app first.
-    if (JWRUsesForegroundCameraHost())
-        notify_post(JWRNotifyTriggerVideo.UTF8String);
-    else
-        notify_post(JWRNotifyVideo.UTF8String);
+    // Route through the shared trigger receiver so the Enabled/lock gate in
+    // SpringBoard applies on every firmware, not only iOS 18.
+    notify_post(JWRNotifyTriggerVideo.UTF8String);
     [self refreshState];
+    // Snap back to the recorder's actual state when the gate denied the tap
+    // (recorder disabled or screen locked) after a slow real start has posted.
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        typeof(self) self = weakSelf;
+        if (!self) return;
+        uint64_t state = 0;
+        notify_get_state(JWRStateToken, &state);
+        BOOL active = state != 0;
+        if (self->_selected != active) {
+            self->_selected = active;
+            [self refreshState];
+        }
+    });
 }
 @end
