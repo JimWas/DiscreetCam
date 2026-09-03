@@ -46,7 +46,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @implementation JWRRecorderManager
 + (instancetype)shared {
     static JWRRecorderManager *m; static dispatch_once_t once;
-    dispatch_once(&once, ^{ m = [self new]; m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL); });
+    dispatch_once(&once, ^{ m = [self new]; m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL); m.savedBrightness = -1.0f; });
     return m;
 }
 - (NSString *)outputDirectory {
