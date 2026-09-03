@@ -37,6 +37,9 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @property(nonatomic) dispatch_source_t watchdogTimer;
 @property(nonatomic, readwrite) BOOL videoRecording;
 @property(nonatomic, readwrite) BOOL audioRecording;
+@property(nonatomic) float savedBrightness;
+- (void)applyScreenOffState;
+- (void)restoreScreenState;
 - (void)handleFinalizedVideoAtURL:(NSURL *)finishedURL context:(NSString *)context;
 @end
 
@@ -475,6 +478,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
         self.videoRecording = YES;
         self.recoveryInProgress = NO;
+        [self applyScreenOffState];
         JWRLog(@"video+audio recording started url=%@", self.videoURL.path);
         [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
         [self scheduleSegmentTimerIfNeeded];
@@ -500,6 +504,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         [self cancelWatchdogTimer];
         [self cancelHeartbeatTimer];
         [self teardownCaptureSession];
+        [self restoreScreenState];
         [self failureFeedback:@"recording disabled after repeated camera failures; check debug.log before trying again"];
         return;
     }
@@ -533,6 +538,24 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         }
     });
 }
+- (void)applyScreenOffState {
+    if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 18) return;
+    if (![JWRPreferences shared].darkScreenWhileRecording) return;
+    UIApplication *app = UIApplication.sharedApplication;
+    if (!app) return;
+    if (self.savedBrightness < 0) self.savedBrightness = UIScreen.mainScreen.brightness;
+    app.idleTimerDisabled = YES;
+    UIScreen.mainScreen.brightness = 0.0;
+    JWRLog(@"screen kept dark during video recording (brightness=%.3f idleTimerDisabled=YES)", self.savedBrightness);
+}
+- (void)restoreScreenState {
+    UIApplication *app = UIApplication.sharedApplication;
+    if (!app) return;
+    if (self.savedBrightness >= 0) UIScreen.mainScreen.brightness = self.savedBrightness;
+    self.savedBrightness = -1.0f;
+    app.idleTimerDisabled = NO;
+    JWRLog(@"screen restored after video recording ended");
+}
 - (void)toggleVideo { dispatch_async(self.queue, ^{
     JWRLog(@"toggleVideo current=%d desired=%d", self.videoRecording, self.desiredVideoRecording);
     if (self.desiredVideoRecording) {
@@ -546,6 +569,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         else {
             [self teardownCaptureSession];
             [self cancelHeartbeatTimer];
+            [self restoreScreenState];
             [self feedbackNotification:JWRNotifyHapticVideoStopped];
         }
         return;
@@ -590,6 +614,7 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
         }
         [self teardownCaptureSession];
         [self cancelHeartbeatTimer];
+        [self restoreScreenState];
         [self feedbackNotification:JWRNotifyHapticVideoStopped];
     });
 }

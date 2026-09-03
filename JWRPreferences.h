@@ -14,6 +14,7 @@
 @property(nonatomic) NSInteger videoSegmentDurationSeconds;
 @property(nonatomic) BOOL embedLocationMetadata;
 @property(nonatomic) BOOL preventWakeWhileRecording;
+@property(nonatomic) BOOL darkScreenWhileRecording;
 @property(nonatomic) NSInteger cameraPosition;
 @property(nonatomic) CGFloat zoom;
 @property(nonatomic) NSInteger fps;

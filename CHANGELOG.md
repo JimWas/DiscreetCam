@@ -25,8 +25,24 @@ rather than assigning unsupported details to a specific build.
 - Declare **Legacy arm64e Support** (`oldabi` 2.0.1 or newer) as a package
   dependency and document it as the first troubleshooting check for partial
   injection, failed video capture, or missing haptic feedback on Dopamine.
+- Restore screen-off video recording on iOS 18. The foreground companion host
+  now disables its idle timer and blanks the panel to black while a video is
+  active, so the camera keeps recording during a sleep-triggered screen-off
+  instead of losing access ~100ms after the device idles. Brightness and the
+  idle timer are restored when recording stops or the recovery circuit breaker
+  trips. The behavior is controlled by the new **Keep Screen Dark While
+  Recording (iOS 18)** preference.
 
 ### Known Issues
+
+- Fully locked-screen camera capture (device locked, SpringBoard frontmost,
+  physical-display entirely off) is still not reachable on iOS 18 from a
+  standard AVFoundation session: Apple revokes the camera whenever the capture
+  process is no longer the foreground camera-eligible app, and the existing
+  FrontBoard state-suppression hooks cannot prevent that revocation. The
+  screen-off path above keeps the host app foreground and darkens the panel,
+  so pressing the physical power button still backgrounds the app and ends the
+  camera feed.
 
 - Darwin notifications are not delivered to the companion app while iOS has
   suspended it, so a video toggle posted while the app is backgrounded waits
