@@ -110,12 +110,14 @@ The preference bundle builds Settings rows programmatically from
 `PSListItemsController`; this avoids crashes encountered with list-item
 controllers on the target firmware.
 
-The video Control Center module posts `JWRNotifyVideo` on the iOS 16 path and
-`JWRNotifyTriggerVideo` on iOS 18, where SpringBoard relays the companion-app
-launch through the launch service before the toggle is delivered (see
-[iOS 18 camera host launch relay](#ios-18-camera-host-launch-relay)). The audio
-module posts `JWRNotifyAudio` on every firmware. Their local selected state is
-currently cosmetic and is not synchronized with the actual recorder state.
+The video Control Center module posts `JWRNotifyTriggerVideo` and the audio
+module posts `JWRNotifyTriggerAudio` on every firmware, so both toggles pass
+through SpringBoard's shared `Enabled`/lock gate before reaching the recorder
+(the iOS 18 relay still foregrounds the companion app first; see [iOS 18
+camera host launch relay](#ios-18-camera-host-launch-relay)). Both modules
+subscribe to `JWRNotifyState`, which carries a video/audio active bitmask, and
+keep their selected appearance in sync with the actual recorder state instead
+of reporting a cosmetic self-state.
 
 ## Event routing
 
@@ -124,16 +126,17 @@ different processes.
 
 | Constant | Notification string | Sender | Receiver |
 | --- | --- | --- | --- |
-| `JWRNotifyVideo` | `com.jimwas.recorder/toggleVideo` | Hardware trigger, video CC module, helper CLI mode (all iOS 16 path) | SpringBoard |
-| `JWRNotifyTriggerVideo` | `com.jimwas.recorder/triggerVideo` | Video CC module and helper CLI mode on iOS 18; hardware-independent diagnostics | SpringBoard |
+| `JWRNotifyVideo` | `com.jimwas.recorder/toggleVideo` | Hardware trigger, helper CLI mode (all iOS 16 path) | SpringBoard |
+| `JWRNotifyTriggerVideo` | `com.jimwas.recorder/triggerVideo` | Video CC module and helper CLI mode; hardware-independent diagnostics | SpringBoard |
+| `JWRNotifyTriggerAudio` | `com.jimwas.recorder/triggerAudio` | Audio CC module | SpringBoard |
 | `JWRNotifyLaunchCameraVideo` | `com.jimwas.recorder/launchCameraVideo` | SpringBoard iOS 18 host-launch relay | Launch service |
 | `JWRNotifyLaunchCameraPhoto` | `com.jimwas.recorder/launchCameraPhoto` | SpringBoard iOS 18 host-launch relay | Launch service |
 | `JWRNotifyForegroundVideo` | `com.jimwas.recorder/foregroundVideo` | Launch service host-launch relay, helper CLI mode | Companion app |
 | `JWRNotifyForegroundPhoto` | `com.jimwas.recorder/foregroundPhoto` | Launch service host-launch relay, helper CLI mode | Companion app |
-| `JWRNotifyAudio` | `com.jimwas.recorder/toggleAudio` | Hardware trigger, audio CC module, helper CLI mode | Launch service |
+| `JWRNotifyAudio` | `com.jimwas.recorder/toggleAudio` | Hardware trigger, helper CLI mode | Launch service |
 | `JWRNotifyPhoto` | `com.jimwas.recorder/takePhoto` | Hardware trigger, helper CLI mode (iOS 16 path) | SpringBoard |
 | `JWRNotifyReload` | `com.jimwas.recorder/reload` | Preferences | SpringBoard and launch service |
-| `JWRNotifyState` | `com.jimwas.recorder/stateChanged` | Recorder manager | No current consumer |
+| `JWRNotifyState` | `com.jimwas.recorder/stateChanged` | Recorder manager (video/audio active bitmask) | Control Center modules |
 | `JWRNotifyHapticStarted` | `com.jimwas.recorder/hapticStarted` | Audio recorder | SpringBoard |
 | `JWRNotifyHapticStopped` | `com.jimwas.recorder/hapticStopped` | Audio recorder | SpringBoard |
 | `JWRNotifyHapticPhoto` | `com.jimwas.recorder/hapticPhoto` | Photo delegate | SpringBoard |
@@ -560,7 +563,7 @@ reload their singleton. Active health timers are rescheduled immediately.
 | `bothVolumesAction` | Integer | `3` | Default photo action. |
 | `preventWakeWhileRecording` | Boolean | `true` | Suppresses raise/tap wake during active video. |
 | `triggersWhileLocked` | Boolean | `false` | Allows volume triggers while the UI is locked. |
-| `triggersWhileAudioPlaying` | Boolean | `false` | Present in UI, but not currently enforced. |
+| `triggersWhileAudioPlaying` | Boolean | `false` | Not enforced; the Settings row was removed until it is implemented. |
 | `haptics` | Boolean | `true` | Enables recorder feedback notifications and playback. |
 | `recordingHeartbeatInterval` | Integer | `0` | `0`, `30`, `60`, `120`, or `300` seconds. |
 
@@ -733,10 +736,11 @@ These are current source facts, not planned marketing features:
 1. Long-press volume actions are not exposed in Settings and are not reliable
    with the current release-reset timing.
 2. `powerAction` has no SpringBoard power-button hook.
-3. `triggersWhileAudioPlaying` is stored and displayed but not checked by
-   `JWRRun`.
-4. `JWRNotifyState` is posted, but Control Center modules do not subscribe to
-   it. Their selected appearance can drift from actual recorder state.
+3. `triggersWhileAudioPlaying` is stored but still not enforced; its Settings
+   row was removed so users are not offered an option that does nothing.
+4. `JWRNotifyState` carries a video/audio active bitmask; Control Center
+   modules subscribe and mirror the actual recorder state. State is
+   event-driven, so a toggle can briefly lag a transition.
 5. Movie segment rotation uses stop/start and may have a brief gap.
 6. Crash recovery moves only staged movies that AVFoundation already considers
    playable. It does not repair corrupt media.

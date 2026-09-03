@@ -14,7 +14,7 @@
 
 static NSTimeInterval lastUp = 0, lastDown = 0;
 static BOOL upHeld = NO, downHeld = NO;
-static int reloadToken, videoToken, photoToken, triggerVideoToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
+static int reloadToken, videoToken, photoToken, triggerVideoToken, triggerAudioToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
 static float lastObservedSystemVolume = -1.0f;
 static id systemVolumeObserver;
 
@@ -170,36 +170,6 @@ static void JWRButton(BOOL up) {
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
     JWRLog(@"SpringBoard trigger component loaded");
-    {
-        const char *classesToCheck[] = {"FBApplicationProcess", "FBProcess", "FBProcessInfo", "FBApplicationProcessInfo", "FBSceneManager", "FBSApplicationProxy", "FBSProcess", "FBSProcessHandle", "FBScene", "FBApplicationScene", "FBWorkspace"};
-        int count = sizeof(classesToCheck) / sizeof(classesToCheck[0]);
-        JWRLog(@"introspect begin count=%d", count);
-        for (int i = 0; i < count; i++) {
-            Class c = NSClassFromString([NSString stringWithUTF8String:classesToCheck[i]]);
-            JWRLog(@"introspect class=%s exists=%d", classesToCheck[i], c != nil);
-        }
-        JWRLog(@"introspect done");
-        Class fbap = NSClassFromString(@"FBApplicationProcess");
-        if (fbap) {
-            unsigned int mc = 0;
-            Method *ms = class_copyMethodList(fbap, &mc);
-            JWRLog(@"FBApplicationProcess instance methods count=%u", mc);
-            for (unsigned int j = 0; j < mc && j < 120; j++) {
-                JWRLog(@"  meth: %@", NSStringFromSelector(method_getName(ms[j])));
-            }
-            free(ms);
-        }
-        Class fbp = NSClassFromString(@"FBProcess");
-        if (fbp) {
-            unsigned int mc = 0;
-            Method *ms = class_copyMethodList(fbp, &mc);
-            JWRLog(@"FBProcess instance methods count=%u", mc);
-            for (unsigned int j = 0; j < mc && j < 120; j++) {
-                JWRLog(@"  meth: %@", NSStringFromSelector(method_getName(ms[j])));
-            }
-            free(ms);
-        }
-    }
     [[JWRRecorderManager shared] recoverPendingRecordings];
     if (!JWRUsesForegroundCameraHost()) {
         notify_register_dispatch(JWRNotifyVideo.UTF8String, &videoToken, dispatch_get_main_queue(), ^(int t){
@@ -231,6 +201,10 @@ static void JWRButton(BOOL up) {
     notify_register_dispatch(JWRNotifyTriggerVideo.UTF8String, &triggerVideoToken, dispatch_get_main_queue(), ^(int token) {
         JWRLog(@"received video trigger from Control Center or diagnostics");
         JWRRun(JWRActionVideo);
+    });
+    notify_register_dispatch(JWRNotifyTriggerAudio.UTF8String, &triggerAudioToken, dispatch_get_main_queue(), ^(int token) {
+        JWRLog(@"received audio trigger from Control Center or diagnostics");
+        JWRRun(JWRActionAudio);
     });
     notify_register_dispatch(JWRNotifyHapticStarted.UTF8String, &hapticStartedToken, dispatch_get_main_queue(), ^(int t){
         if (![JWRPreferences shared].haptics) return;

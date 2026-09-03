@@ -14,6 +14,8 @@ static const NSTimeInterval JWRMinimumPlayableMovieDuration = 0.10;
 static const NSInteger JWRMaximumConsecutiveRecoveryFailures = 5;
 static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 
+static int recorderStateToken;
+
 @interface JWRRecorderManager () <AVCaptureFileOutputRecordingDelegate, AVCapturePhotoCaptureDelegate, AVAudioRecorderDelegate>
 @property(nonatomic) dispatch_queue_t queue;
 @property(nonatomic) AVCaptureSession *session;
@@ -43,7 +45,11 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @implementation JWRRecorderManager
 + (instancetype)shared {
     static JWRRecorderManager *m; static dispatch_once_t once;
-    dispatch_once(&once, ^{ m = [self new]; m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL); });
+    dispatch_once(&once, ^{
+        m = [self new];
+        m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL);
+        notify_register_plain(JWRNotifyState.UTF8String, &recorderStateToken);
+    });
     return m;
 }
 - (NSString *)outputDirectory {
@@ -295,9 +301,28 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
     JWRLog(@"capture startRunning returned running=%d interrupted=%d", s.running, s.interrupted);
     return YES;
 }
+static BOOL JWRIsLaunchServiceInstance(void) {
+    // The companion UI app and the launch daemon are the same executable; the
+    // daemon is the one launched with --service.
+    return [NSProcessInfo.processInfo.arguments containsObject:@"--service"];
+}
+- (BOOL)processPublishesVideoState {
+    // Video capture runs in SpringBoard on iOS 16 and in the foreground
+    // companion app on iOS 18; audio always runs in the --service daemon.
+    return !JWRIsLaunchServiceInstance();
+}
+- (void)publishRecorderState {
+    uint64_t mask = [self processPublishesVideoState] ? JWRStateVideoActive : JWRStateAudioActive;
+    uint64_t current = (self.videoRecording ? JWRStateVideoActive : 0) |
+                       (self.audioRecording ? JWRStateAudioActive : 0);
+    uint64_t previous = 0;
+    notify_get_state(recorderStateToken, &previous);
+    notify_set_state(recorderStateToken, (previous & ~mask) | (current & mask));
+    notify_post(JWRNotifyState.UTF8String);
+}
 - (void)feedbackNotification:(NSString *)notification {
     if ([JWRPreferences shared].haptics) notify_post(notification.UTF8String);
-    notify_post(JWRNotifyState.UTF8String);
+    [self publishRecorderState];
 }
 - (void)failureFeedback:(NSString *)reason {
     JWRLog(@"recording health failure: %@", reason);

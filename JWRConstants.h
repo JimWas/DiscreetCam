@@ -9,6 +9,7 @@ static NSString * const JWRNotifyForegroundPhoto = @"com.jimwas.recorder/foregro
 static NSString * const JWRNotifyLaunchCameraVideo = @"com.jimwas.recorder/launchCameraVideo";
 static NSString * const JWRNotifyLaunchCameraPhoto = @"com.jimwas.recorder/launchCameraPhoto";
 static NSString * const JWRNotifyTriggerVideo = @"com.jimwas.recorder/triggerVideo";
+static NSString * const JWRNotifyTriggerAudio = @"com.jimwas.recorder/triggerAudio";
 static NSString * const JWRNotifyReload = @"com.jimwas.recorder/reload";
 static NSString * const JWRNotifyState = @"com.jimwas.recorder/stateChanged";
 static NSString * const JWRNotifyHapticStarted = @"com.jimwas.recorder/hapticStarted";
@@ -25,3 +26,9 @@ typedef NS_ENUM(NSInteger, JWRAction) {
     JWRActionAudio = 2,
     JWRActionPhoto = 3
 };
+
+// JWRNotifyState payload bits. SpringBoard owns video state and the launch
+// service owns audio state; each process publishes only its own bit so the
+// shared value preserves the other side's state.
+static const uint64_t JWRStateVideoActive = 1ull << 0;
+static const uint64_t JWRStateAudioActive = 1ull << 1;
