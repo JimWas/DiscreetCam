@@ -27,6 +27,7 @@
 @property(nonatomic) JWRAction longVolumeDownAction;
 @property(nonatomic) JWRAction bothVolumesAction;
 @property(nonatomic) JWRAction powerAction;
+@property(nonatomic) BOOL verboseLogs;
 + (instancetype)shared;
 - (void)reload;
 @end

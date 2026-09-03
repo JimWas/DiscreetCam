@@ -232,4 +232,12 @@
     CFPreferencesAppSynchronize((__bridge CFStringRef)JWRPrefsID);
     notify_post(JWRNotifyReload.UTF8String);
 }
+- (void)startRecording {
+    JWRLog(@"Settings: start recording requested");
+    notify_post(JWRNotifyVideoStart.UTF8String);
+}
+- (void)stopRecording {
+    JWRLog(@"Settings: stop recording requested");
+    notify_post(JWRNotifyVideoStop.UTF8String);
+}
 @end

@@ -2,6 +2,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 #import <CoreLocation/CoreLocation.h>
+#import <notify.h>
+#import "../JWRConstants.h"
 #import "../JWRLogger.h"
 
 @interface JWRAppDelegate : UIResponder <UIApplicationDelegate>
@@ -58,4 +60,31 @@
 - (void)applicationDidEnterBackground:(UIApplication *)application { JWRLog(@"app entered background"); }
 - (void)applicationWillEnterForeground:(UIApplication *)application { JWRLog(@"app entering foreground"); }
 - (void)applicationWillTerminate:(UIApplication *)application { JWRLog(@"app will terminate"); }
+- (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options {
+    NSString *host = url.host.lowercaseString ?: @"";
+    NSString *path = url.path.lowercaseString ?: @"";
+    NSString *action = host.length ? host : [path stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]];
+    JWRLog(@"app opened with URL: %@ (action: %@)", url, action);
+
+    if ([action containsString:@"video"]) {
+        if ([action containsString:@"start"]) {
+            notify_post(JWRNotifyVideoStart.UTF8String);
+        } else if ([action containsString:@"stop"]) {
+            notify_post(JWRNotifyVideoStop.UTF8String);
+        } else {
+            notify_post(JWRNotifyVideo.UTF8String);
+        }
+    } else if ([action containsString:@"audio"]) {
+        notify_post(JWRNotifyAudio.UTF8String);
+    } else if ([action containsString:@"photo"]) {
+        notify_post(JWRNotifyPhoto.UTF8String);
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if ([app respondsToSelector:@selector(suspend)]) {
+            [app performSelector:@selector(suspend)];
+        }
+    });
+    return YES;
+}
 @end

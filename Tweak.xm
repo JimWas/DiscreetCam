@@ -1,7 +1,9 @@
 #import <UIKit/UIKit.h>
 #import <notify.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
 #import "JWRPreferences.h"
 #import "JWRLogger.h"
@@ -9,7 +11,8 @@
 
 static NSTimeInterval lastUp = 0, lastDown = 0;
 static BOOL upHeld = NO, downHeld = NO;
-static int reloadToken, videoToken, photoToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
+static BOOL gRecordingActive = NO;
+static int reloadToken, videoToken, videoStartToken, videoStopToken, photoToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
 
 static void JWRPlayStrongVideoVibration(BOOL started) {
     typedef void (*JWRVibrationFunction)(SystemSoundID, id, NSDictionary *);
@@ -81,7 +84,7 @@ static void JWRButton(BOOL up) {
 
 %hook SBLiftToWakeManager
 - (void)liftToWakeController:(id)controller didObserveTransition:(long long)transition deviceOrientation:(long long)orientation {
-    if ([JWRPreferences shared].preventWakeWhileRecording && [JWRRecorderManager shared].videoRecording) {
+    if ([JWRPreferences shared].preventWakeWhileRecording && (gRecordingActive || [JWRRecorderManager shared].videoRecording)) {
         JWRLog(@"suppressed raise-to-wake during video recording");
         return;
     }
@@ -91,7 +94,7 @@ static void JWRButton(BOOL up) {
 
 %hook SBLockScreenManager
 - (void)_wakeScreenForTapToWake {
-    if ([JWRPreferences shared].preventWakeWhileRecording && [JWRRecorderManager shared].videoRecording) {
+    if ([JWRPreferences shared].preventWakeWhileRecording && (gRecordingActive || [JWRRecorderManager shared].videoRecording)) {
         JWRLog(@"suppressed tap-to-wake during video recording");
         return;
     }
@@ -99,26 +102,60 @@ static void JWRButton(BOOL up) {
 }
 %end
 
+%ctor {
+    @autoreleasepool {
+        [JWRPreferences shared];
+        [JWRRecorderManager installCaptureSessionHooks];
+    }
+}
+
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
     JWRLog(@"SpringBoard trigger component loaded");
     [[JWRRecorderManager shared] recoverPendingRecordings];
+
+    // Check if service process is available for video recording
+    BOOL serviceAvailable = [JWRRecorderManager serviceProcessAvailable];
+    JWRLog(@"service process available: %d (video recording will use %s)",
+           serviceAvailable, serviceAvailable ? "dedicated service process" : "SpringBoard");
+
     notify_register_dispatch(JWRNotifyVideo.UTF8String, &videoToken, dispatch_get_main_queue(), ^(int t){
         JWRLog(@"SpringBoard received video toggle");
-        [[JWRRecorderManager shared] toggleVideo];
+        BOOL available = [JWRRecorderManager serviceProcessAvailable];
+        if (available) {
+            JWRLog(@"forwarding video toggle to service process");
+        } else {
+            JWRLog(@"falling back to SpringBoard video recording");
+            [[JWRRecorderManager shared] toggleVideo];
+        }
+    });
+    notify_register_dispatch(JWRNotifyVideoStart.UTF8String, &videoStartToken, dispatch_get_main_queue(), ^(int t){
+        JWRLog(@"SpringBoard received video start");
+        if (![JWRRecorderManager serviceProcessAvailable]) {
+            [[JWRRecorderManager shared] startVideo];
+        }
+    });
+    notify_register_dispatch(JWRNotifyVideoStop.UTF8String, &videoStopToken, dispatch_get_main_queue(), ^(int t){
+        JWRLog(@"SpringBoard received video stop");
+        if (![JWRRecorderManager serviceProcessAvailable]) {
+            [[JWRRecorderManager shared] stopVideo];
+        }
     });
     notify_register_dispatch(JWRNotifyPhoto.UTF8String, &photoToken, dispatch_get_main_queue(), ^(int t){
         JWRLog(@"SpringBoard received photo request");
+        // Photos can still be taken from SpringBoard
         [[JWRRecorderManager shared] takePhoto];
     });
     notify_register_dispatch(JWRNotifyHapticStarted.UTF8String, &hapticStartedToken, dispatch_get_main_queue(), ^(int t){
+        gRecordingActive = YES;
         if (![JWRPreferences shared].haptics) return;
         AudioServicesPlaySystemSound(1520);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 160 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AudioServicesPlaySystemSound(1520); });
         JWRLog(@"played recording-started double haptic");
     });
     notify_register_dispatch(JWRNotifyHapticStopped.UTF8String, &hapticStoppedToken, dispatch_get_main_queue(), ^(int t){
+        gRecordingActive = NO;
         if (![JWRPreferences shared].haptics) return;
         AudioServicesPlaySystemSound(1520);
         JWRLog(@"played recording-stopped haptic");
@@ -134,6 +171,7 @@ static void JWRButton(BOOL up) {
         JWRLog(@"played recording heartbeat haptic");
     });
     notify_register_dispatch(JWRNotifyHapticFailure.UTF8String, &hapticFailureToken, dispatch_get_main_queue(), ^(int t){
+        gRecordingActive = NO;
         if (![JWRPreferences shared].haptics) return;
         AudioServicesPlaySystemSound(1521);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 140 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AudioServicesPlaySystemSound(1521); });
@@ -141,11 +179,13 @@ static void JWRButton(BOOL up) {
         JWRLog(@"played recording-failure triple haptic");
     });
     notify_register_dispatch(JWRNotifyHapticVideoStarted.UTF8String, &hapticVideoStartedToken, dispatch_get_main_queue(), ^(int t){
+        gRecordingActive = YES;
         if (![JWRPreferences shared].haptics) return;
         JWRPlayStrongVideoVibration(YES);
         JWRLog(@"played video-started SE2-compatible strong vibration pattern");
     });
     notify_register_dispatch(JWRNotifyHapticVideoStopped.UTF8String, &hapticVideoStoppedToken, dispatch_get_main_queue(), ^(int t){
+        gRecordingActive = NO;
         if (![JWRPreferences shared].haptics) return;
         JWRPlayStrongVideoVibration(NO);
         JWRLog(@"played video-stopped SE2-compatible strong vibration pattern");
@@ -156,5 +196,3 @@ static void JWRButton(BOOL up) {
     });
 }
 %end
-
-%ctor { @autoreleasepool { [JWRPreferences shared]; } }

@@ -2,6 +2,8 @@
 
 static NSString * const JWRPrefsID = @"com.jimwas.recorder";
 static NSString * const JWRNotifyVideo = @"com.jimwas.recorder/toggleVideo";
+static NSString * const JWRNotifyVideoStart = @"com.jimwas.recorder/startVideo";
+static NSString * const JWRNotifyVideoStop = @"com.jimwas.recorder/stopVideo";
 static NSString * const JWRNotifyAudio = @"com.jimwas.recorder/toggleAudio";
 static NSString * const JWRNotifyPhoto = @"com.jimwas.recorder/takePhoto";
 static NSString * const JWRNotifyReload = @"com.jimwas.recorder/reload";

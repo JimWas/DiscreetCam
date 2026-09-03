@@ -47,5 +47,6 @@
     _longVolumeDownAction = [v(@"longVolumeDownAction", @0) integerValue];
     _bothVolumesAction = [v(@"bothVolumesAction", @3) integerValue];
     _powerAction = [v(@"powerAction", @0) integerValue];
+    _verboseLogs = [v(@"verboseLogs", @NO) boolValue];
 }
 @end

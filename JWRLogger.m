@@ -9,7 +9,10 @@ void JWRLog(NSString *format, ...) {
     formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
     NSString *line = [NSString stringWithFormat:@"%@ [%@:%d] %@\n", [formatter stringFromDate:NSDate.date], NSProcessInfo.processInfo.processName, getpid(), message];
-    NSLog(@"[JWR] %@", message);
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"com.jimwas.recorder"];
+    if ([defaults boolForKey:@"verboseLogs"]) {
+        NSLog(@"[JWR] %@", message);
+    }
     @try {
         NSArray<NSString *> *directories = @[
             @"/var/mobile/Library/Logs/JimWasRecorder",

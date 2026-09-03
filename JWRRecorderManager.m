@@ -8,6 +8,8 @@
 #import "JWRLogger.h"
 #import <limits.h>
 #import <math.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 static const unsigned long long JWRMinimumPlayableMovieBytes = 16 * 1024;
 static const NSTimeInterval JWRMinimumPlayableMovieDuration = 0.10;
@@ -36,14 +38,105 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 @property(nonatomic) dispatch_source_t watchdogTimer;
 @property(nonatomic, readwrite) BOOL videoRecording;
 @property(nonatomic, readwrite) BOOL audioRecording;
+@property(nonatomic) UIView *cameraEventView;
+@property(nonatomic) id cameraEventInteraction;
 - (void)handleFinalizedVideoAtURL:(NSURL *)finishedURL context:(NSString *)context;
 @end
 
 @implementation JWRRecorderManager
+
++ (void)initialize {
+    if (self == [JWRRecorderManager class]) {
+        [self installCaptureSessionHooks];
+    }
+}
+
++ (void)installCaptureSessionHooks {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class sessionClass = NSClassFromString(@"AVCaptureSession");
+        if (!sessionClass) return;
+
+        SEL supportedSel = @selector(isMultitaskingCameraAccessSupported);
+        Method supportedMethod = class_getInstanceMethod(sessionClass, supportedSel);
+        if (supportedMethod) {
+            method_setImplementation(supportedMethod, imp_implementationWithBlock(^BOOL(id _self) {
+                return YES;
+            }));
+            JWRLog(@"[CaptureHooks] swizzled isMultitaskingCameraAccessSupported -> YES");
+        }
+
+        SEL setEnabledSel = @selector(setMultitaskingCameraAccessEnabled:);
+        Method setEnabledMethod = class_getInstanceMethod(sessionClass, setEnabledSel);
+        if (setEnabledMethod) {
+            IMP origSetEnabled = method_getImplementation(setEnabledMethod);
+            method_setImplementation(setEnabledMethod, imp_implementationWithBlock(^(id _self, BOOL enabled) {
+                JWRLog(@"[CaptureHooks] setMultitaskingCameraAccessEnabled:%d -> forcing YES", enabled);
+                ((void(*)(id, SEL, BOOL))origSetEnabled)(_self, setEnabledSel, YES);
+            }));
+            JWRLog(@"[CaptureHooks] swizzled setMultitaskingCameraAccessEnabled:");
+        }
+
+        unsigned int instMethodCount = 0;
+        Method *instMethods = class_copyMethodList(sessionClass, &instMethodCount);
+        if (instMethods) {
+            for (unsigned int i = 0; i < instMethodCount; i++) {
+                NSString *name = NSStringFromSelector(method_getName(instMethods[i]));
+                if ([name isEqualToString:@"_isApplicationBackgrounded"]) {
+                    JWRLog(@"[CaptureHooks] found _isApplicationBackgrounded, forcing NO");
+                    method_setImplementation(instMethods[i], imp_implementationWithBlock(^BOOL(id _self) { return NO; }));
+                }
+            }
+            free(instMethods);
+        }
+
+        SEL interruptSel = NSSelectorFromString(@"_handleSessionInterruption:");
+        if ([sessionClass instancesRespondToSelector:interruptSel]) {
+            Method m = class_getInstanceMethod(sessionClass, interruptSel);
+            IMP origInterrupt = method_getImplementation(m);
+            method_setImplementation(m, imp_implementationWithBlock(^(id self, NSNotification *note) {
+                NSNumber *reason = note.userInfo[AVCaptureSessionInterruptionReasonKey];
+                NSInteger reasonValue = reason.integerValue;
+                JWRLog(@"[CaptureHooks] session interruption reason=%ld", (long)reasonValue);
+                if (reasonValue == 1) {
+                    JWRLog(@"[CaptureHooks] SUPPRESSING background camera interruption");
+                    return;
+                }
+                if (origInterrupt) {
+                    ((void(*)(id, SEL, NSNotification *))origInterrupt)(self, interruptSel, note);
+                }
+            }));
+            JWRLog(@"[CaptureHooks] swizzled _handleSessionInterruption:");
+        }
+
+        SEL setInterruptedSel = NSSelectorFromString(@"_setInterrupted:withReason:");
+        if ([sessionClass instancesRespondToSelector:setInterruptedSel]) {
+            Method m = class_getInstanceMethod(sessionClass, setInterruptedSel);
+            IMP origIMP = method_getImplementation(m);
+            method_setImplementation(m, imp_implementationWithBlock(^(id self, BOOL interrupted, NSInteger reason) {
+                if (interrupted && reason == 1) {
+                    JWRLog(@"[CaptureHooks] SUPPRESSED _setInterrupted:YES withReason:1 (background)");
+                    return;
+                }
+                JWRLog(@"[CaptureHooks] _setInterrupted:%d withReason:%ld passing through", interrupted, (long)reason);
+                ((void (*)(id, SEL, BOOL, NSInteger))origIMP)(self, setInterruptedSel, interrupted, reason);
+            }));
+            JWRLog(@"[CaptureHooks] swizzled _setInterrupted:withReason:");
+        }
+    });
+}
+
 + (instancetype)shared {
     static JWRRecorderManager *m; static dispatch_once_t once;
-    dispatch_once(&once, ^{ m = [self new]; m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL); });
+    dispatch_once(&once, ^{
+        [self installCaptureSessionHooks];
+        m = [self new];
+        m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL);
+    });
     return m;
+}
++ (BOOL)serviceProcessAvailable {
+    return [[NSFileManager defaultManager] fileExistsAtPath:@"/var/mobile/Documents/.jwr-service-ready"];
 }
 - (NSString *)outputDirectory {
     return @"/var/mobile/Documents/JimWasRecorder";
@@ -273,9 +366,56 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
             JWRLog(@"multitasking camera enabled now=%d", s.multitaskingCameraAccessEnabled);
         }
     }
+    [self installCameraEventInteraction];
     [s startRunning];
     JWRLog(@"capture startRunning returned running=%d interrupted=%d", s.running, s.interrupted);
     return YES;
+}
+- (void)installCameraEventInteraction {
+    if (self.cameraEventInteraction) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        Class interactionClass = NSClassFromString(@"AVCaptureEventInteraction");
+        if (!interactionClass) {
+            JWRLog(@"AVCaptureEventInteraction not available");
+            return;
+        }
+        UIView *view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 1)];
+        view.hidden = YES;
+        view.alpha = 0;
+        @try {
+            id interaction = [[interactionClass alloc] init];
+            if (interaction) {
+                [view addInteraction:interaction];
+                self.cameraEventInteraction = interaction;
+                JWRLog(@"installed AVCaptureEventInteraction on hidden view");
+            } else {
+                JWRLog(@"failed to create AVCaptureEventInteraction");
+            }
+        } @catch (NSException *e) {
+            JWRLog(@"AVCaptureEventInteraction instantiation skipped: %@", e);
+        }
+        UIWindow *keyWindow = nil;
+        for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in scene.windows) {
+                    if (window.isKeyWindow) { keyWindow = window; break; }
+                }
+                if (keyWindow) break;
+            }
+        }
+        if (!keyWindow) {
+            for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if (scene.windows.count > 0) { keyWindow = scene.windows.firstObject; break; }
+            }
+        }
+        if (keyWindow) {
+            [keyWindow addSubview:view];
+            self.cameraEventView = view;
+            JWRLog(@"added camera event view to window");
+        } else {
+            JWRLog(@"no window available for camera event view");
+        }
+    });
 }
 - (void)feedbackNotification:(NSString *)notification {
     if ([JWRPreferences shared].haptics) notify_post(notification.UTF8String);
@@ -529,6 +669,35 @@ static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
     self.desiredVideoRecording = YES;
     self.recoveryAttempts = 0;
     [self beginVideoRecording];
+}); }
+- (void)startVideo { dispatch_async(self.queue, ^{
+    JWRLog(@"startVideo current=%d", self.videoRecording);
+    if (self.desiredVideoRecording) {
+        JWRLog(@"startVideo skipped; already recording");
+        return;
+    }
+    self.desiredVideoRecording = YES;
+    self.recoveryAttempts = 0;
+    [self beginVideoRecording];
+}); }
+- (void)stopVideo { dispatch_async(self.queue, ^{
+    JWRLog(@"stopVideo current=%d", self.videoRecording);
+    if (!self.desiredVideoRecording) {
+        JWRLog(@"stopVideo skipped; not recording");
+        return;
+    }
+    self.desiredVideoRecording = NO;
+    self.recoveryInProgress = NO;
+    self.rollingSegment = NO;
+    self.recordingGeneration++;
+    [self cancelSegmentTimer];
+    [self cancelWatchdogTimer];
+    if (self.movieOutput.recording) [self.movieOutput stopRecording];
+    else {
+        [self teardownCaptureSession];
+        [self cancelHeartbeatTimer];
+        [self feedbackNotification:JWRNotifyHapticVideoStopped];
+    }
 }); }
 - (void)captureOutput:(AVCaptureFileOutput *)output didFinishRecordingToOutputFileAtURL:(NSURL *)url fromConnections:(NSArray *)connections error:(NSError *)error {
     dispatch_async(self.queue, ^{

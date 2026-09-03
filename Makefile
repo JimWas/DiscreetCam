@@ -1,6 +1,6 @@
 export THEOS ?= /Users/jimwashkau/theos
 ARCHS = arm64 arm64e
-TARGET = iphone:clang:16.5:15.0
+TARGET = iphone:clang:26.2:16.0
 THEOS_PACKAGE_SCHEME = rootless
 INSTALL_TARGET_PROCESSES = SpringBoard Preferences
 
@@ -29,6 +29,9 @@ JimWasRecorderPrefs_CFLAGS = -fobjc-arc
 JimWasRecorderPrefs_RESOURCE_DIRS = prefs/Resources
 JimWasRecorderPrefs_INFO_PLIST = prefs/JimWasRecorderPrefs.plist
 
+BUILD_LEGACY_CC ?= 0
+
+ifeq ($(BUILD_LEGACY_CC),1)
 BUNDLE_NAME += JWRVideoModule
 JWRVideoModule_FILES = modules/JWRVideoModule.m JWRLogger.m
 JWRVideoModule_FRAMEWORKS = UIKit
@@ -44,10 +47,14 @@ JWRAudioModule_PRIVATE_FRAMEWORKS = ControlCenterUIKit
 JWRAudioModule_INSTALL_PATH = /Library/ControlCenter/Bundles
 JWRAudioModule_CFLAGS = -fobjc-arc
 JWRAudioModule_INFO_PLIST = modules/JWRAudioModule.plist
+endif
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 include $(THEOS_MAKE_PATH)/application.mk
 include $(THEOS_MAKE_PATH)/bundle.mk
 
 after-install::
+	install.exec "launchctl bootout system/com.jimwas.recorder.service 2>/dev/null || launchctl unload -w /var/jb/Library/LaunchDaemons/com.jimwas.recorder.service.plist 2>/dev/null || true"
+	install.exec "sleep 1"
+	install.exec "launchctl bootstrap system /var/jb/Library/LaunchDaemons/com.jimwas.recorder.service.plist 2>/dev/null || launchctl load -w /var/jb/Library/LaunchDaemons/com.jimwas.recorder.service.plist"
 	install.exec "sbreload"
