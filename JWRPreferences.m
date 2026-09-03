@@ -28,6 +28,7 @@
         : (_splitVideoEveryTwoMinutes ? 120 : 0);
     _embedLocationMetadata = [v(@"embedLocationMetadata", @NO) boolValue];
     _preventWakeWhileRecording = [v(@"preventWakeWhileRecording", @YES) boolValue];
+    _darkScreenWhileRecording = [v(@"darkScreenWhileRecording", @YES) boolValue];
     _cameraPosition = [v(@"cameraPosition", @0) integerValue];
     _zoom = [v(@"zoom", @1.0) doubleValue];
     _fps = [v(@"fps", @30) integerValue];
