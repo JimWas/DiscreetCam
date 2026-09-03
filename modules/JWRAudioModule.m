@@ -15,12 +15,12 @@ static __weak JWRAudioModule *JWRSharedAudioModule;
 
 @implementation JWRAudioModule
 + (void)load {
-    notify_register_dispatch(JWRNotifyState.UTF8String, &JWRStateToken, dispatch_get_main_queue(), ^(int token) {
+    notify_register_dispatch(JWRNotifyAudioState.UTF8String, &JWRStateToken, dispatch_get_main_queue(), ^(int token) {
         JWRAudioModule *module = JWRSharedAudioModule;
         if (!module) return;
         uint64_t state = 0;
         notify_get_state(token, &state);
-        BOOL active = (state & JWRStateAudioActive) != 0;
+        BOOL active = state != 0;
         if (module->_selected != active) {
             module->_selected = active;
             [module refreshState];
@@ -32,7 +32,7 @@ static __weak JWRAudioModule *JWRSharedAudioModule;
         JWRSharedAudioModule = self;
         uint64_t state = 0;
         notify_get_state(JWRStateToken, &state);
-        _selected = (state & JWRStateAudioActive) != 0;
+        _selected = state != 0;
     }
     return self;
 }
@@ -55,7 +55,7 @@ static __weak JWRAudioModule *JWRSharedAudioModule;
         if (!self) return;
         uint64_t state = 0;
         notify_get_state(JWRStateToken, &state);
-        BOOL active = (state & JWRStateAudioActive) != 0;
+        BOOL active = state != 0;
         if (self->_selected != active) {
             self->_selected = active;
             [self refreshState];

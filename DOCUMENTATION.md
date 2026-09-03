@@ -114,10 +114,16 @@ The video Control Center module posts `JWRNotifyTriggerVideo` and the audio
 module posts `JWRNotifyTriggerAudio` on every firmware, so both toggles pass
 through SpringBoard's shared `Enabled`/lock gate before reaching the recorder
 (the iOS 18 relay still foregrounds the companion app first; see [iOS 18
-camera host launch relay](#ios-18-camera-host-launch-relay)). Both modules
-subscribe to `JWRNotifyState`, which carries a video/audio active bitmask, and
-keep their selected appearance in sync with the actual recorder state instead
-of reporting a cosmetic self-state.
+camera host launch relay](#ios-18-camera-host-launch-relay)).
+
+The video and audio Control Center modules keep their selected appearance in
+sync with the actual recorder state instead of reporting a cosmetic self-state.
+The recorder publishes a 0/1 active flag on `JWRNotifyVideoState` (written by
+the process that owns video capture: SpringBoard on iOS 16, the foreground
+companion app on iOS 18) and on `JWRNotifyAudioState` (written by the launch
+service). Each notification has exactly one writer, so concurrent video and
+audio transitions cannot overwrite each other, and state is published on every
+start and stop, including watchdog recovery and segment rolls.
 
 ## Event routing
 
@@ -136,7 +142,8 @@ different processes.
 | `JWRNotifyAudio` | `com.jimwas.recorder/toggleAudio` | Hardware trigger, helper CLI mode | Launch service |
 | `JWRNotifyPhoto` | `com.jimwas.recorder/takePhoto` | Hardware trigger, helper CLI mode (iOS 16 path) | SpringBoard |
 | `JWRNotifyReload` | `com.jimwas.recorder/reload` | Preferences | SpringBoard and launch service |
-| `JWRNotifyState` | `com.jimwas.recorder/stateChanged` | Recorder manager (video/audio active bitmask) | Control Center modules |
+| `JWRNotifyVideoState` | `com.jimwas.recorder/stateVideo` | Video owner (SpringBoard on iOS 16, companion app on iOS 18), 0/1 | Control Center video module |
+| `JWRNotifyAudioState` | `com.jimwas.recorder/stateAudio` | Launch service, 0/1 | Control Center audio module |
 | `JWRNotifyHapticStarted` | `com.jimwas.recorder/hapticStarted` | Audio recorder | SpringBoard |
 | `JWRNotifyHapticStopped` | `com.jimwas.recorder/hapticStopped` | Audio recorder | SpringBoard |
 | `JWRNotifyHapticPhoto` | `com.jimwas.recorder/hapticPhoto` | Photo delegate | SpringBoard |
@@ -738,9 +745,9 @@ These are current source facts, not planned marketing features:
 2. `powerAction` has no SpringBoard power-button hook.
 3. `triggersWhileAudioPlaying` is stored but still not enforced; its Settings
    row was removed so users are not offered an option that does nothing.
-4. `JWRNotifyState` carries a video/audio active bitmask; Control Center
-   modules subscribe and mirror the actual recorder state. State is
-   event-driven, so a toggle can briefly lag a transition.
+4. Recorder state is event-driven: video and audio publish separately on
+   `JWRNotifyVideoState` and `JWRNotifyAudioState`, so a Control Center toggle
+   can briefly lag a transition.
 5. Movie segment rotation uses stop/start and may have a brief gap.
 6. Crash recovery moves only staged movies that AVFoundation already considers
    playable. It does not repair corrupt media.

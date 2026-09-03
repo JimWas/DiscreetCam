@@ -11,7 +11,13 @@ static NSString * const JWRNotifyLaunchCameraPhoto = @"com.jimwas.recorder/launc
 static NSString * const JWRNotifyTriggerVideo = @"com.jimwas.recorder/triggerVideo";
 static NSString * const JWRNotifyTriggerAudio = @"com.jimwas.recorder/triggerAudio";
 static NSString * const JWRNotifyReload = @"com.jimwas.recorder/reload";
-static NSString * const JWRNotifyState = @"com.jimwas.recorder/stateChanged";
+// Single-writer recorder-state flags for Control Center: each notification
+// carries a 0/1 state written only by the process that owns that recorder, so
+// concurrent video and audio transitions cannot overwrite each other. Video is
+// owned by SpringBoard on iOS 16 and the foreground companion app on iOS 18;
+// the --service daemon always owns audio.
+static NSString * const JWRNotifyVideoState = @"com.jimwas.recorder/stateVideo";
+static NSString * const JWRNotifyAudioState = @"com.jimwas.recorder/stateAudio";
 static NSString * const JWRNotifyHapticStarted = @"com.jimwas.recorder/hapticStarted";
 static NSString * const JWRNotifyHapticStopped = @"com.jimwas.recorder/hapticStopped";
 static NSString * const JWRNotifyHapticPhoto = @"com.jimwas.recorder/hapticPhoto";
@@ -26,9 +32,3 @@ typedef NS_ENUM(NSInteger, JWRAction) {
     JWRActionAudio = 2,
     JWRActionPhoto = 3
 };
-
-// JWRNotifyState payload bits. SpringBoard owns video state and the launch
-// service owns audio state; each process publishes only its own bit so the
-// shared value preserves the other side's state.
-static const uint64_t JWRStateVideoActive = 1ull << 0;
-static const uint64_t JWRStateAudioActive = 1ull << 1;

@@ -15,12 +15,12 @@ static __weak JWRVideoModule *JWRSharedVideoModule;
 
 @implementation JWRVideoModule
 + (void)load {
-    notify_register_dispatch(JWRNotifyState.UTF8String, &JWRStateToken, dispatch_get_main_queue(), ^(int token) {
+    notify_register_dispatch(JWRNotifyVideoState.UTF8String, &JWRStateToken, dispatch_get_main_queue(), ^(int token) {
         JWRVideoModule *module = JWRSharedVideoModule;
         if (!module) return;
         uint64_t state = 0;
         notify_get_state(token, &state);
-        BOOL active = (state & JWRStateVideoActive) != 0;
+        BOOL active = state != 0;
         if (module->_selected != active) {
             module->_selected = active;
             [module refreshState];
@@ -32,7 +32,7 @@ static __weak JWRVideoModule *JWRSharedVideoModule;
         JWRSharedVideoModule = self;
         uint64_t state = 0;
         notify_get_state(JWRStateToken, &state);
-        _selected = (state & JWRStateVideoActive) != 0;
+        _selected = state != 0;
     }
     return self;
 }
@@ -55,7 +55,7 @@ static __weak JWRVideoModule *JWRSharedVideoModule;
         if (!self) return;
         uint64_t state = 0;
         notify_get_state(JWRStateToken, &state);
-        BOOL active = (state & JWRStateVideoActive) != 0;
+        BOOL active = state != 0;
         if (self->_selected != active) {
             self->_selected = active;
             [self refreshState];

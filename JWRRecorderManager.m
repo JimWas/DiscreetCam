@@ -14,7 +14,7 @@ static const NSTimeInterval JWRMinimumPlayableMovieDuration = 0.10;
 static const NSInteger JWRMaximumConsecutiveRecoveryFailures = 5;
 static const NSTimeInterval JWRHealthyRecordingConfirmationDelay = 5.0;
 
-static int recorderStateToken;
+static int recorderVideoStateToken, recorderAudioStateToken;
 
 @interface JWRRecorderManager () <AVCaptureFileOutputRecordingDelegate, AVCapturePhotoCaptureDelegate, AVAudioRecorderDelegate>
 @property(nonatomic) dispatch_queue_t queue;
@@ -48,7 +48,8 @@ static int recorderStateToken;
     dispatch_once(&once, ^{
         m = [self new];
         m.queue = dispatch_queue_create("com.jimwas.recorder.capture", DISPATCH_QUEUE_SERIAL);
-        notify_register_plain(JWRNotifyState.UTF8String, &recorderStateToken);
+        notify_register_plain(JWRNotifyVideoState.UTF8String, &recorderVideoStateToken);
+        notify_register_plain(JWRNotifyAudioState.UTF8String, &recorderAudioStateToken);
     });
     return m;
 }
@@ -312,13 +313,13 @@ static BOOL JWRIsLaunchServiceInstance(void) {
     return !JWRIsLaunchServiceInstance();
 }
 - (void)publishRecorderState {
-    uint64_t mask = [self processPublishesVideoState] ? JWRStateVideoActive : JWRStateAudioActive;
-    uint64_t current = (self.videoRecording ? JWRStateVideoActive : 0) |
-                       (self.audioRecording ? JWRStateAudioActive : 0);
-    uint64_t previous = 0;
-    notify_get_state(recorderStateToken, &previous);
-    notify_set_state(recorderStateToken, (previous & ~mask) | (current & mask));
-    notify_post(JWRNotifyState.UTF8String);
+    if ([self processPublishesVideoState]) {
+        notify_set_state(recorderVideoStateToken, self.videoRecording ? 1 : 0);
+        notify_post(JWRNotifyVideoState.UTF8String);
+    } else {
+        notify_set_state(recorderAudioStateToken, self.audioRecording ? 1 : 0);
+        notify_post(JWRNotifyAudioState.UTF8String);
+    }
 }
 - (void)feedbackNotification:(NSString *)notification {
     if ([JWRPreferences shared].haptics) notify_post(notification.UTF8String);
@@ -499,6 +500,7 @@ static BOOL JWRIsLaunchServiceInstance(void) {
         }
         [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
         self.videoRecording = YES;
+        [self publishRecorderState];
         self.recoveryInProgress = NO;
         JWRLog(@"video+audio recording started url=%@", self.videoURL.path);
         [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
@@ -602,6 +604,7 @@ static BOOL JWRIsLaunchServiceInstance(void) {
             [self applyVideoMetadata];
             [self.movieOutput startRecordingToOutputFileURL:self.videoURL recordingDelegate:self];
             self.videoRecording = YES;
+            [self publishRecorderState];
             JWRLog(@"next crash-safe video+audio segment started url=%@", self.videoURL.path);
             [self scheduleHealthyRecordingConfirmationForOutput:self.movieOutput];
             [self scheduleSegmentTimerIfNeeded];

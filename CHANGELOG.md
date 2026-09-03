@@ -26,10 +26,13 @@ rather than assigning unsupported details to a specific build.
   dependency and document it as the first troubleshooting check for partial
   injection, failed video capture, or missing haptic feedback on Dopamine.
 - Synchronize the Control Center video and audio toggles with the actual
-  recorder state: the recorder publishes a video/audio active bitmask with its
-  state notification and both modules subscribe to it, so a toggle no longer
-  stays lit after a denied trigger or fails to show a recording started from
-  the hardware buttons.
+  recorder state: the recorder publishes a 0/1 active flag on separate
+  single-writer video and audio state notifications that both modules
+  subscribe to, so a toggle no longer stays lit after a denied trigger or
+  fails to show a recording started from the hardware buttons. State publishes
+  on every recording start and stop, including watchdog recovery and segment
+  rolls, and separate writers mean concurrent video/audio transitions cannot
+  overwrite each other.
 - Route the Control Center modules through SpringBoard's shared trigger
   receivers on every firmware (the audio module gains `JWRNotifyTriggerAudio`),
   so the **Enabled** and locked-screen gates apply to Control Center toggles
