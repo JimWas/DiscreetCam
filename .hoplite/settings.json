@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "ports": {"preview": 3000},
+  "scripts": {
+    "setup": {
+      "enabled": true,
+      "command": "bash -c 'set -e; mkdir -p tests/build; log=tests/build/setup-test.log; if [ \"$(uname -s)\" = \"Linux\" ] && ! command -v gnustep-config >/dev/null 2>&1; then apt-get update -qq >/dev/null 2>&1 || true; pkgs=\"clang libgnustep-base-dev gnustep-make make\"; for p in libblocksruntime-dev libobjc-dev gobjc; do apt-cache policy \"$p\" 2>/dev/null | grep -q Candidate && pkgs=\"$pkgs $p\"; done; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $pkgs; fi; bash tests/run.sh > \"$log\" 2>&1 || { cat \"$log\"; exit 1; }; cat \"$log\"'"
+    },
+    "run": {
+      "enabled": true,
+      "command": "bash tests/run.sh"
+    },
+    "archive": {"enabled": true, "command": null},
+    "check": {"enabled": true, "command": "bash tests/run.sh"}
+  },
+  "mcpServers": []
+}

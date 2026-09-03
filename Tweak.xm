@@ -1,10 +1,10 @@
 #import <UIKit/UIKit.h>
 #import <notify.h>
-#import <objc/message.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFAudio/AVAudioSession.h>
 #import <dlfcn.h>
 #import "JWRPreferences.h"
+#import "JWRButtonRouter.h"
 #import "JWRLogger.h"
 #import "JWRRecorderManager.h"
 
@@ -12,25 +12,9 @@
 @property(nonatomic, readonly) NSString *bundleIdentifier;
 @end
 
-static NSTimeInterval lastUp = 0, lastDown = 0;
-static BOOL upHeld = NO, downHeld = NO;
 static int reloadToken, videoToken, photoToken, triggerVideoToken, hapticStartedToken, hapticStoppedToken, hapticPhotoToken, hapticHeartbeatToken, hapticFailureToken, hapticVideoStartedToken, hapticVideoStoppedToken;
 static float lastObservedSystemVolume = -1.0f;
 static id systemVolumeObserver;
-
-static BOOL JWRUsesForegroundCameraHost(void) {
-    return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 18;
-}
-
-static void JWRLaunchForegroundCameraHost(NSString *notification) {
-    // openApplicationWithBundleID: only launches when called on SpringBoard's
-    // main thread, where it blocks ~10s (iOS 18.1.1 has no async variant).
-    // Delegate the launch to the service daemon, which can call it freely.
-    NSString *launch = [notification isEqualToString:JWRNotifyForegroundPhoto]
-        ? JWRNotifyLaunchCameraPhoto : JWRNotifyLaunchCameraVideo;
-    notify_post(launch.UTF8String);
-    JWRLog(@"camera host launch delegated to service (%@)", launch);
-}
 
 static void JWRPlayReliableVibration(void) {
     AudioServicesPlayAlertSound(kSystemSoundID_Vibrate);
@@ -78,42 +62,9 @@ static void JWRPlayStrongVideoVibration(BOOL started) {
     }
 }
 
-static BOOL JWRLocked(void) {
-    Class c = NSClassFromString(@"SBLockScreenManager");
-    id m = [c respondsToSelector:@selector(sharedInstance)] ? [c performSelector:@selector(sharedInstance)] : nil;
-    return m && [m respondsToSelector:@selector(isUILocked)] && ((BOOL (*)(id,SEL))objc_msgSend)(m, @selector(isUILocked));
-}
-static void JWRRun(JWRAction action) {
-    JWRPreferences *p = [JWRPreferences shared];
-    if (!p.enabled || (!p.triggersWhileLocked && JWRLocked())) { JWRLog(@"trigger ignored action=%ld", (long)action); return; }
-    JWRLog(@"sending trigger action=%ld", (long)action);
-    if (action == JWRActionVideo && JWRUsesForegroundCameraHost()) JWRLaunchForegroundCameraHost(JWRNotifyForegroundVideo);
-    else if (action == JWRActionPhoto && JWRUsesForegroundCameraHost()) JWRLaunchForegroundCameraHost(JWRNotifyForegroundPhoto);
-    else if (action == JWRActionVideo) notify_post(JWRNotifyVideo.UTF8String);
-    else if (action == JWRActionAudio) notify_post(JWRNotifyAudio.UTF8String);
-    else if (action == JWRActionPhoto) notify_post(JWRNotifyPhoto.UTF8String);
-}
-static void JWRButton(BOOL up) {
-    JWRPreferences *p = [JWRPreferences shared];
-    NSTimeInterval now = CACurrentMediaTime();
-    if (up) {
-        if (downHeld) { JWRRun(p.bothVolumesAction); upHeld = downHeld = NO; return; }
-        upHeld = YES;
-        if (now - lastUp < 0.38) JWRRun(p.doubleVolumeUpAction);
-        lastUp = now;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, .7*NSEC_PER_SEC), dispatch_get_main_queue(), ^{ if (upHeld) { upHeld=NO; JWRRun(p.longVolumeUpAction); } });
-    } else {
-        if (upHeld) { JWRRun(p.bothVolumesAction); upHeld = downHeld = NO; return; }
-        downHeld = YES;
-        if (now - lastDown < 0.38) JWRRun(p.doubleVolumeDownAction);
-        lastDown = now;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, .7*NSEC_PER_SEC), dispatch_get_main_queue(), ^{ if (downHeld) { downHeld=NO; JWRRun(p.longVolumeDownAction); } });
-    }
-}
-
 %hook SBVolumeControl
-- (void)increaseVolume { if (!JWRUsesForegroundCameraHost()) JWRButton(YES); %orig; dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.15*NSEC_PER_SEC),dispatch_get_main_queue(),^{upHeld=NO;}); }
-- (void)decreaseVolume { if (!JWRUsesForegroundCameraHost()) JWRButton(NO); %orig; dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.15*NSEC_PER_SEC),dispatch_get_main_queue(),^{downHeld=NO;}); }
+- (void)increaseVolume { JWRButtonRouter *router = [JWRButtonRouter shared]; if (!router.usesForegroundCameraHost()) [router buttonPressedUp]; %orig; dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.15*NSEC_PER_SEC),dispatch_get_main_queue(),^{[router buttonReleasedUp];}); }
+- (void)decreaseVolume { JWRButtonRouter *router = [JWRButtonRouter shared]; if (!router.usesForegroundCameraHost()) [router buttonPressedDown]; %orig; dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.15*NSEC_PER_SEC),dispatch_get_main_queue(),^{[router buttonReleasedDown];}); }
 %end
 
 %hook SBLiftToWakeManager
@@ -201,7 +152,7 @@ static void JWRButton(BOOL up) {
         }
     }
     [[JWRRecorderManager shared] recoverPendingRecordings];
-    if (!JWRUsesForegroundCameraHost()) {
+    if (![JWRButtonRouter shared].usesForegroundCameraHost()) {
         notify_register_dispatch(JWRNotifyVideo.UTF8String, &videoToken, dispatch_get_main_queue(), ^(int t){
             JWRLog(@"SpringBoard received video toggle");
             [[JWRRecorderManager shared] toggleVideo];
@@ -222,15 +173,16 @@ static void JWRButton(BOOL up) {
             if (oldVolume < 0.0f || fabsf(newVolume - oldVolume) < 0.0001f) return;
             BOOL up = newVolume > oldVolume;
             JWRLog(@"iOS 18 volume notification direction=%@ old=%.3f new=%.3f reason=%@", up ? @"up" : @"down", oldVolume, newVolume, note.userInfo[@"AVSystemController_AudioVolumeChangeReasonNotificationParameter"]);
-            JWRButton(up);
+            JWRButtonRouter *router = [JWRButtonRouter shared];
+            if (up) [router buttonPressedUp]; else [router buttonPressedDown];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-                if (up) upHeld = NO; else downHeld = NO;
+                if (up) [router buttonReleasedUp]; else [router buttonReleasedDown];
             });
         }];
     }
     notify_register_dispatch(JWRNotifyTriggerVideo.UTF8String, &triggerVideoToken, dispatch_get_main_queue(), ^(int token) {
         JWRLog(@"received video trigger from Control Center or diagnostics");
-        JWRRun(JWRActionVideo);
+        [[JWRButtonRouter shared] routeAction:JWRActionVideo];
     });
     notify_register_dispatch(JWRNotifyHapticStarted.UTF8String, &hapticStartedToken, dispatch_get_main_queue(), ^(int t){
         if (![JWRPreferences shared].haptics) return;
