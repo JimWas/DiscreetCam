@@ -108,6 +108,25 @@ static void testFinalizeDiscardsHeaderOnlyMovie(void) {
     JWRRemoveTempDirectory(root);
 }
 
+static void testFinalizeDiscardsValidMovieBelowByteFloor(void) {
+    NSString *root = JWRMakeTempDirectory();
+    NSString *videos = JWRJoinPath(root, @"videos");
+    NSString *staging = JWRJoinPath(videos, @".inprogress");
+    [[NSFileManager defaultManager] createDirectoryAtPath:staging
+                              withIntermediateDirectories:YES attributes:nil error:NULL];
+
+    NSString *stagedPath = JWRJoinPath(staging, @"tiny_valid.mov");
+    TAssert(JWRWriteFile(stagedPath, 100));
+    [JWRMovieValidation markValid:stagedPath]; // AVFoundation would accept it
+
+    NSURL *finalURL = nil;
+    BOOL moved = [JWROutputFiles finalizeStagedVideoAtURL:[NSURL fileURLWithPath:stagedPath]
+                                               recovered:NO finalURL:&finalURL];
+    TAssert(!moved);
+    TAssert(!JWRPathExists(stagedPath)); // the byte floor is unconditional
+    JWRRemoveTempDirectory(root);
+}
+
 static void testFinalizeRetainsNontrivialInvalidMovie(void) {
     NSString *root = JWRMakeTempDirectory();
     NSString *videos = JWRJoinPath(root, @"videos");
@@ -194,6 +213,11 @@ static void testRecoveryScanOutcomes(void) {
     NSString *unrelatedPath = JWRJoinPath(staging, @"notes.txt");
     TAssert(JWRWriteFile(unrelatedPath, 30000));
 
+    NSString *tinyValidPath = JWRJoinPath(staging, @"tiny_valid.mov");
+    TAssert(JWRWriteFile(tinyValidPath, 100));
+    [JWRMovieValidation markValid:tinyValidPath];
+    [JWRMovieValidation markPlayable:tinyValidPath];
+
     [JWROutputFiles scanAndRecoverStagedVideosInDirectory:staging];
 
     TAssert(!JWRPathExists(playablePath));
@@ -201,6 +225,7 @@ static void testRecoveryScanOutcomes(void) {
     TAssert(!JWRPathExists(headerOnlyPath));      // discarded
     TAssert(JWRPathExists(unreadablePath));       // retained for manual recovery
     TAssert(JWRPathExists(unrelatedPath));        // non-movies are ignored
+    TAssert(!JWRPathExists(tinyValidPath));       // playable but below the byte floor is still discarded
 
     // A missing directory must not crash the scan.
     [JWROutputFiles scanAndRecoverStagedVideosInDirectory:JWRJoinPath(videos, @"absent")];
@@ -213,6 +238,7 @@ void runOutputFilesTests(void) {
     testFinalizeMovesValidStagedMovie();
     testFinalizeRecoveredPrefixesName();
     testFinalizeDiscardsHeaderOnlyMovie();
+    testFinalizeDiscardsValidMovieBelowByteFloor();
     testFinalizeRetainsNontrivialInvalidMovie();
     testFinalizeMissingStagedMovieIsNoOp();
     testFinalizeRenamesOnCollision();
@@ -283,18 +309,17 @@ void runNormalizationTests(void) {
 //
 // The GNUstep runtime used by the harness cannot copy blocks, so the router's
 // seam blocks are stored by plain assignment and must be created and used
-// within one stack frame. The macros below expand in the caller's frame and
-// keep the seams alive for the duration of each test. Gesture timing uses the
-// router's default monotonic clock with real sleeps; the long-press check is
-// deferred through performAfterDelay (a no-op here), so the double-tap
-// window, both-buttons chord, action mapping, gating, and routing are
-// exercised; the long-press firing path needs a runtime with working block
-// copying and is covered on-device.
+// within one stack frame. Gesture timing uses an injected clock that each
+// test advances explicitly, so the double-tap window is exercised without
+// wall-clock sleeps; the long-press check is deferred through
+// performAfterDelay (a no-op here). The long-press firing path needs a
+// runtime with working block copying and is covered on-device.
 // ---------------------------------------------------------------------------
 
-#define JWRGestureSetup(router, prefs, actions) \
+#define JWRGestureSetup(router, prefs, actions, clock) \
     router = [JWRButtonRouter new]; \
     router.preferences = (prefs); \
+    router.now = ^NSTimeInterval { return *clock; }; \
     router.performAfterDelay = ^(NSTimeInterval delay, void (^block)(void)) { (void)delay; (void)block; }; \
     router.runAction = ^(JWRAction action) { [(actions) addObject:@(action)]; }; \
     [router reset]
@@ -312,10 +337,12 @@ static void testDoubleTapUpWithinWindow(void) {
     JWRPreferences *prefs = [JWRPreferences new];
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100; // large baseline: first press is never a double-tap
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedUp];
-    [NSThread sleepForTimeInterval:0.2]; // 0.2s < 0.38s window
+    nowValue = 100.2; // well inside the 0.38s window
     [router buttonPressedUp];
     TAssert([actions count] == 1);
     TAssert([[actions objectAtIndex:0] integerValue] == JWRActionVideo); // default doubleUp
@@ -325,10 +352,12 @@ static void testDoubleTapUpJustOutsideWindow(void) {
     JWRPreferences *prefs = [JWRPreferences new];
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedUp];
-    [NSThread sleepForTimeInterval:0.5]; // 0.5s >= 0.38s window
+    nowValue = 100.5; // at/after the 0.38s window
     [router buttonPressedUp];
     TAssert([actions count] == 0);
 }
@@ -337,18 +366,21 @@ static void testBothButtonsChordFiresBothVolumesAction(void) {
     JWRPreferences *prefs = [JWRPreferences new];
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedUp];
-    [NSThread sleepForTimeInterval:0.05]; // up is still held
+    nowValue += 0.05; // up is still held
     [router buttonPressedDown];
     TAssert([actions count] == 1);
     TAssert([[actions objectAtIndex:0] integerValue] == JWRActionPhoto); // default bothVolumes
 
     // The complement order works too.
     [router reset];
+    nowValue += 0.05; // keep the cleared lastDown outside the double-tap window
     [router buttonPressedDown];
-    [NSThread sleepForTimeInterval:0.05];
+    nowValue += 0.05;
     [router buttonPressedUp];
     TAssert([actions count] == 2);
     TAssert([[actions objectAtIndex:1] integerValue] == JWRActionPhoto);
@@ -358,10 +390,12 @@ static void testDoubleTapDownFiresConfiguredAction(void) {
     JWRPreferences *prefs = [JWRPreferences new];
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedDown];
-    [NSThread sleepForTimeInterval:0.2];
+    nowValue = 100.2;
     [router buttonPressedDown];
     TAssert([actions count] == 1);
     TAssert([[actions objectAtIndex:0] integerValue] == JWRActionAudio); // default doubleDown
@@ -372,10 +406,12 @@ static void testConfiguredActionMappingsAreHonored(void) {
     prefs.doubleVolumeUpAction = JWRActionPhoto;
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedUp];
-    [NSThread sleepForTimeInterval:0.2];
+    nowValue = 100.2;
     [router buttonPressedUp];
     TAssert([actions count] == 1);
     TAssert([[actions objectAtIndex:0] integerValue] == JWRActionPhoto);
@@ -385,13 +421,40 @@ static void testResetClearsGestureState(void) {
     JWRPreferences *prefs = [JWRPreferences new];
     NSMutableArray *actions = [NSMutableArray array];
     JWRButtonRouter *router = nil;
-    JWRGestureSetup(router, prefs, actions);
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+    JWRGestureSetup(router, prefs, actions, clock);
 
     [router buttonPressedUp];
-    [NSThread sleepForTimeInterval:0.3]; // lastUp is now in the past
-    [router reset]; // fresh state means no previous press within the window
+    nowValue = 100.1; // a second press here would be a double-tap
+    [router reset]; // clears lastUp and the held flags
+    nowValue = 100.5; // outside the window against the cleared lastUp
     [router buttonPressedUp];
     TAssert([actions count] == 0);
+}
+
+static void testGestureRoutingRespectsTheGate(void) {
+    JWRPreferences *prefs = [JWRPreferences new];
+    JWRButtonRouter *router = nil;
+    NSMutableArray *actions = [NSMutableArray array];
+    NSTimeInterval nowValue = 100;
+    NSTimeInterval *clock = &nowValue;
+
+    prefs.enabled = NO;
+    JWRGestureSetup(router, prefs, actions, clock);
+    [router buttonPressedUp];
+    nowValue = 100.2;
+    [router buttonPressedUp];
+    TAssert([actions count] == 0); // disabled: gated before the seam sees the action
+
+    // Fresh wiring per phase avoids stale gesture state between assertions.
+    prefs.enabled = YES;
+    JWRGestureSetup(router, prefs, actions, clock);
+    [router buttonPressedUp];
+    nowValue = 100.2;
+    [router buttonPressedUp];
+    TAssert([actions count] == 1);
+    TAssert([[actions objectAtIndex:0] integerValue] == JWRActionVideo);
 }
 
 static void testShouldDeliverActionGates(void) {
@@ -496,6 +559,7 @@ void runRouterTests(void) {
     testDoubleTapDownFiresConfiguredAction();
     testConfiguredActionMappingsAreHonored();
     testResetClearsGestureState();
+    testGestureRoutingRespectsTheGate();
     testShouldDeliverActionGates();
     testRoutingPostsExpectedNotifications();
     testDisabledTweakPostsNothing();

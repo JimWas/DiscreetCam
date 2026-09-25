@@ -24,17 +24,20 @@ const unsigned long long JWRMinimumPlayableMovieBytes = 16 * 1024;
     if (!stagedURL || ![[NSFileManager defaultManager] fileExistsAtPath:stagedURL.path]) return NO;
     unsigned long long bytes = [[[[NSFileManager defaultManager] attributesOfItemAtPath:stagedURL.path error:nil]
                                  objectForKey:NSFileSize] unsignedLongLongValue];
+    // The byte floor is unconditional: even an AVFoundation-valid file below it
+    // is treated as a header-only fragment (pre-refactor behavior).
+    if (bytes < JWRMinimumPlayableMovieBytes) {
+        NSError *removeError = nil;
+        [[NSFileManager defaultManager] removeItemAtURL:stagedURL error:&removeError];
+        JWRLog(@"discarded header-only staged movie path=%@ bytes=%llu reason=%@ removeError=%@",
+               stagedURL.path, bytes,
+               [NSString stringWithFormat:@"file is too small (%llu bytes)", bytes], removeError);
+        return NO;
+    }
     NSString *validationReason = nil;
     if (![JWRMovieValidation validateMovieAtURL:stagedURL reason:&validationReason]) {
-        if (bytes < JWRMinimumPlayableMovieBytes) {
-            NSError *removeError = nil;
-            [[NSFileManager defaultManager] removeItemAtURL:stagedURL error:&removeError];
-            JWRLog(@"discarded header-only staged movie path=%@ bytes=%llu reason=%@ removeError=%@",
-                   stagedURL.path, bytes, validationReason, removeError);
-        } else {
-            JWRLog(@"retained nontrivial invalid staged movie for manual recovery path=%@ bytes=%llu reason=%@",
-                   stagedURL.path, bytes, validationReason);
-        }
+        JWRLog(@"retained nontrivial invalid staged movie for manual recovery path=%@ bytes=%llu reason=%@",
+               stagedURL.path, bytes, validationReason);
         return NO;
     }
     NSURL *destination = [self finalURLForStagedURL:stagedURL recovered:recovered];

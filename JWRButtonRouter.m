@@ -162,12 +162,13 @@ static BOOL JWRIsDeviceLocked(void) {
     return action != JWRActionNone;
 }
 - (void)routeAction:(JWRAction)action {
-    if (self.runAction) {
-        self.runAction(action);
-        return;
-    }
     if (![self shouldDeliverAction:action]) {
         JWRLog(@"trigger ignored action=%ld", (long)action);
+        return;
+    }
+    if (self.runAction) {
+        // Injected handlers observe the same gating as posted notifications.
+        self.runAction(action);
         return;
     }
     JWRLog(@"sending trigger action=%ld", (long)action);
