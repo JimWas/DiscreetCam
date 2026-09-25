@@ -1,4 +1,5 @@
-.DS_Store
-.theos/
-packages/
-site-staging/
+ .DS_Store
+ .theos/
+ packages/
+ site-staging/
+tests/build/

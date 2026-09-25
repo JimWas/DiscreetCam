@@ -214,8 +214,8 @@ Trigger rules in the current implementation:
 - Two presses within 0.38 seconds invoke the configured double-press action.
 - If the other volume button is considered held, the both-buttons action runs.
 - The original system volume behavior is still called with `%orig`.
-- `JWRRun` ignores all actions when the tweak is disabled.
-- `JWRRun` ignores actions while locked unless `triggersWhileLocked` is enabled.
+- `JWRButtonRouter` ignores all actions when the tweak is disabled.
+- `JWRButtonRouter` ignores actions while locked unless `triggersWhileLocked` is enabled.
 
 The action enum is:
 
@@ -734,7 +734,7 @@ These are current source facts, not planned marketing features:
    with the current release-reset timing.
 2. `powerAction` has no SpringBoard power-button hook.
 3. `triggersWhileAudioPlaying` is stored and displayed but not checked by
-   `JWRRun`.
+   `JWRButtonRouter`.
 4. `JWRNotifyState` is posted, but Control Center modules do not subscribe to
    it. Their selected appearance can drift from actual recorder state.
 5. Movie segment rotation uses stop/start and may have a brief gap.
@@ -768,7 +768,7 @@ These are current source facts, not planned marketing features:
 
 1. Extend `JWRAction` without renumbering existing values.
 2. Add the display title/value to every trigger specifier.
-3. Route the action in `JWRRun`.
+3. Route the action in `JWRButtonRouter -routeAction:`.
 4. Define a Darwin notification if another process owns the operation.
 5. Add receiver lifecycle and logging.
 6. Test double presses, both-buttons timing, lock state, and normal volume

@@ -52,6 +52,10 @@ later, uses the iOS 16.5 SDK, and packages with the Theos rootless scheme.
 | `Tweak.xm` | SpringBoard hooks, hardware triggers, wake suppression, Darwin notification receivers, and haptics. |
 | `JWRRecorderManager.m` | Video, photo, audio, segmentation, metadata, watchdog, and file recovery logic. |
 | `JWRPreferences.m` | Shared preference-domain loader and defaults. |
+| `JWRPreferences+Normalization.m` | Preference clamping and legacy-value migration used by the loader. |
+| `JWRButtonRouter.m` | Volume-button gesture state machine and Darwin-notification action routing. |
+| `JWROutputFiles.m` | Crash-safe staged-movie naming, finalization, and boot-time recovery scan. |
+| `JWRMovieValidation.m` | AVFoundation playability checks for staged movies. |
 | `JWRConstants.h` | Action values and Darwin notification names. |
 | `JWRLogger.m` | Unified file and system logging. |
 | `JWRLocationProvider.m` | Background location cache used for video metadata. |
@@ -78,6 +82,23 @@ The rootless Debian package is written to `packages/`:
 ```text
 packages/com.jimwas.recorder_<version>_iphoneos-arm64.deb
 ```
+
+## Tests
+
+The risky decision logic (hardware-trigger routing, movie staging/finalization
+and crash recovery, and preference normalization) is extracted into
+`JWRButtonRouter`, `JWROutputFiles`, `JWRMovieValidation`, and
+`JWRPreferences+Normalization` so it can be tested off-device with GNUstep:
+
+```sh
+make -C tests            # or: bash tests/run.sh
+```
+
+The suite needs a GNUstep toolchain (`gnustep-make`, `libgnustep-base-dev`,
+clang or gcc). On Debian/Ubuntu Linux the repository's setup script installs
+it; the same `make -C tests` invocation works on macOS with `brew install
+gnustep`. AVFoundation-dependent pieces are replaced by stubs in the harness;
+run the Theos build above to test them on device.
 
 ## Install
 

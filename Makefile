@@ -7,13 +7,13 @@ INSTALL_TARGET_PROCESSES = SpringBoard Preferences
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = JimWasRecorder
-JimWasRecorder_FILES = Tweak.xm JWRRecorderManager.m JWRPreferences.m JWRLogger.m
+JimWasRecorder_FILES = Tweak.xm JWRRecorderManager.m JWRPreferences.m JWRLogger.m JWRButtonRouter.m JWROutputFiles.m JWRMovieValidation.m JWRPreferences+Normalization.m
 JimWasRecorder_FRAMEWORKS = AVFoundation AVFAudio Photos AudioToolbox UIKit
 JimWasRecorder_CFLAGS = -fobjc-arc
 JimWasRecorder_LDFLAGS = -Wl,-undefined,dynamic_lookup
 
 APPLICATION_NAME = JWRRecorderApp
-JWRRecorderApp_FILES = app/main.m app/JWRAppDelegate.m JWRRecorderManager.m JWRPreferences.m JWRLogger.m JWRLocationProvider.m
+JWRRecorderApp_FILES = app/main.m app/JWRAppDelegate.m JWRRecorderManager.m JWRPreferences.m JWRLogger.m JWRLocationProvider.m JWROutputFiles.m JWRMovieValidation.m JWRPreferences+Normalization.m
 JWRRecorderApp_FRAMEWORKS = AVFoundation Photos CoreLocation AudioToolbox UIKit
 JWRRecorderApp_CFLAGS = -fobjc-arc
 JWRRecorderApp_INSTALL_PATH = /Applications
@@ -21,7 +21,7 @@ JWRRecorderApp_CODESIGN_FLAGS = -Sapp/JWRRecorderApp.entitlements
 JWRRecorderApp_RESOURCE_FILES = app/JWRBlackVideo.mov app/Icons/AppIcon60x60@2x.png app/Icons/AppIcon60x60@3x.png app/Icons/AppIcon29x29@2x.png app/Icons/AppIcon29x29@3x.png app/Icons/AppIcon20x20@2x.png app/Icons/AppIcon20x20@3x.png
 
 BUNDLE_NAME = JimWasRecorderPrefs
-JimWasRecorderPrefs_FILES = prefs/JWRRootListController.m JWRPreferences.m JWRLogger.m
+JimWasRecorderPrefs_FILES = prefs/JWRRootListController.m JWRPreferences.m JWRLogger.m JWRPreferences+Normalization.m
 JimWasRecorderPrefs_FRAMEWORKS = UIKit AVFoundation
 JimWasRecorderPrefs_PRIVATE_FRAMEWORKS = Preferences
 JimWasRecorderPrefs_INSTALL_PATH = /Library/PreferenceBundles

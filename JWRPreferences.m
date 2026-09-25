@@ -1,4 +1,5 @@
 #import "JWRPreferences.h"
+#import "JWRPreferences+Normalization.h"
 
 @implementation JWRPreferences
 + (instancetype)shared {
@@ -14,18 +15,14 @@
     _triggersWhileLocked = [v(@"triggersWhileLocked", @NO) boolValue];
     _triggersWhileAudioPlaying = [v(@"triggersWhileAudioPlaying", @NO) boolValue];
     _haptics = [v(@"haptics", @YES) boolValue];
-    _recordingHeartbeatInterval = MAX(0, [v(@"recordingHeartbeatInterval", @0) integerValue]);
-    id storedVideoStorageMode = d[@"videoStorageMode"];
-    _videoStorageMode = storedVideoStorageMode
-        ? MIN(2, MAX(0, [storedVideoStorageMode integerValue]))
-        : ([v(@"saveVideoToPhotos", @YES) boolValue] ? 2 : 0);
+    _recordingHeartbeatInterval = [self.class jwr_normalizedHeartbeatIntervalWithStoredValue:v(@"recordingHeartbeatInterval", @0)];
+    _videoStorageMode = [self.class jwr_normalizedVideoStorageModeWithStoredValue:d[@"videoStorageMode"]
+                                                        legacySaveVideoToPhotos:[v(@"saveVideoToPhotos", @YES) boolValue]];
     _savePhotoToPhotos = [v(@"savePhotoToPhotos", @YES) boolValue];
     _saveAudioAsVideo = [v(@"saveAudioAsVideo", @NO) boolValue];
     _splitVideoEveryTwoMinutes = [v(@"splitVideoEveryTwoMinutes", @NO) boolValue];
-    id storedSegmentDuration = d[@"videoSegmentDurationSeconds"];
-    _videoSegmentDurationSeconds = storedSegmentDuration
-        ? MAX(0, [storedSegmentDuration integerValue])
-        : (_splitVideoEveryTwoMinutes ? 120 : 0);
+    _videoSegmentDurationSeconds = [self.class jwr_normalizedVideoSegmentDurationWithStoredValue:d[@"videoSegmentDurationSeconds"]
+                                                                   legacySplitVideoEveryTwoMinutes:_splitVideoEveryTwoMinutes];
     _embedLocationMetadata = [v(@"embedLocationMetadata", @NO) boolValue];
     _preventWakeWhileRecording = [v(@"preventWakeWhileRecording", @YES) boolValue];
     _cameraPosition = [v(@"cameraPosition", @0) integerValue];
@@ -34,13 +31,8 @@
     _videoQuality = [v(@"videoQuality", @1) integerValue];
     _photoQuality = [v(@"photoQuality", @0.92) doubleValue];
     _filenamePrefix = v(@"filenamePrefix", @"JWR");
-    NSString *requestedVideoDirectory = v(@"videoOutputDirectory", @"/var/mobile/Documents/JimWasRecorder");
-    NSString *standardizedVideoDirectory = [requestedVideoDirectory isKindOfClass:NSString.class]
-        ? requestedVideoDirectory.stringByStandardizingPath : @"";
-    _videoOutputDirectory =
-        [standardizedVideoDirectory hasPrefix:@"/var/mobile/"] && standardizedVideoDirectory.length > @"/var/mobile/".length
-            ? standardizedVideoDirectory
-            : @"/var/mobile/Documents/JimWasRecorder";
+    _videoOutputDirectory = [self.class jwr_normalizedVideoOutputDirectoryWithStoredValue:
+                             v(@"videoOutputDirectory", @"/var/mobile/Documents/JimWasRecorder")];
     _doubleVolumeUpAction = [v(@"doubleVolumeUpAction", @1) integerValue];
     _doubleVolumeDownAction = [v(@"doubleVolumeDownAction", @2) integerValue];
     _longVolumeUpAction = [v(@"longVolumeUpAction", @0) integerValue];
